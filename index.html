@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>京大×慶應ジョイントコンサート｜音でつなぐ交流</title>
+  <meta name="description" content="2026年開催：京都大学交響楽団×慶應ワグネル・ソサイエティ・オーケストラ 交流促進マッチングサイト" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="app.js" defer></script>
+</head>
+
+<body data-page="home1">
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html">
+        <span class="brand-badge">2026</span>
+        <span class="brand-text">京大×慶應 交流マッチング</span>
+      </a>
+
+      <nav class="nav" aria-label="メインメニュー">
+        <a href="events.html">募集中のイベント</a>
+        <a href="create.html">イベントを作成</a>
+        <a href="join.html">イベントに参加</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <h1 class="hero-title">京大×慶應ジョイントコンサート</h1>
+          <p class="hero-subtitle">音でつなぐ交流</p>
+
+          <div class="hero-buttons">
+            <a class="btn square orange" href="create.html">イベントを作成</a>
+            <a class="btn square green" href="join.html">イベントに参加</a>
+          </div>
+
+          <div class="hero-links">
+            <a class="chip" href="events.html">現在募集中のイベントを見る →</a>
+          </div>
+
+          <ul class="hero-notes">
+            <li>京大・慶應の学生同士が交流するためのマッチングサイトです。</li>
+            <li>所属大学に関係なく書き込みOKです！</li>
+          </ul>
+        </div>
+
+        <div class="hero-visual">
+          <div class="photo-frame">
+            <img src="rogo.png" alt="京大×慶應ジョイントコンサート イメージ画像" />
+          </div>
+          <p class="caption"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section lemon-band">
+      <div class="container">
+        <div class="callout">
+          <p class="callout-title">ようこそ！</p>
+          <p class="callout-text">
+            企画を作って、参加して、つながろう。<br/>
+            アンサンブル・食事会・観光・登山など、なんでもOK！
+          </p>
+          <div class="callout-actions">
+            <a class="btn ghost" href="events.html">募集中のイベント一覧</a>
+            <a class="btn ghost" href="create.html">企画を作る</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>© <span id="year"></span> 京大×慶應 ジョイント交流</p>
+      <a class="to-top" href="index.html">Home</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

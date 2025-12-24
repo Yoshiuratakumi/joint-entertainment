@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>イベントに参加｜京大×慶應ジョイント</title>
+  <meta name="description" content="企画を選んで参加できます。" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="app.js" defer></script>
+</head>
+
+<body data-page="join">
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html">
+        <span class="brand-badge">2026</span>
+        <span class="brand-text">京大×慶應 交流マッチング</span>
+      </a>
+
+      <nav class="nav" aria-label="メインメニュー">
+        <a href="events.html">募集中のイベント</a>
+        <a href="create.html">イベントを作成</a>
+        <a class="active" href="join.html">イベントに参加</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-head">
+      <div class="container">
+        <h1 class="page-title">参加したい企画を選ぼう！</h1>
+        <p class="page-subtitle">イベントをクリックすると詳細が開き、入力して参加できます。</p>
+
+        <div class="page-actions">
+          <a class="btn square orange" href="create.html">イベントを作成</a>
+          <a class="btn ghost" href="events.html">募集中のイベント一覧</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div id="joinList" class="accordion"></div>
+
+        <div id="emptyJoin" class="empty" hidden>
+          <p class="empty-title">参加できるイベントがまだありません。</p>
+          <p class="empty-text">誰かが企画を作ると、ここに表示されます。</p>
+          <a class="btn square orange" href="create.html">イベントを作成</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>© <span id="year"></span> 京大×慶應 ジョイント交流</p>
+      <a class="to-top" href="events.html">募集中のイベント</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

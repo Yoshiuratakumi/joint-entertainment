@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>イベントを作成｜京大×慶應ジョイント</title>
+  <meta name="description" content="企画を作成してイベント一覧に追加します。" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="app.js" defer></script>
+</head>
+
+<body data-page="create">
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html">
+        <span class="brand-badge">2026</span>
+        <span class="brand-text">京大×慶應 交流マッチング</span>
+      </a>
+
+      <nav class="nav" aria-label="メインメニュー">
+        <a href="events.html">募集中のイベント</a>
+        <a class="active" href="create.html">イベントを作成</a>
+        <a href="join.html">イベントに参加</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-head">
+      <div class="container">
+        <h1 class="page-title">あなたのやりたい企画を作成しよう！</h1>
+        <p class="page-subtitle">作成後、あなたの情報は「現在の参加者」にも自動で追加されます。</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <form id="createForm" class="panel form" novalidate>
+          <div class="grid2">
+            <div class="field">
+              <label for="title">あなたの企画タイトル名</label>
+              <input id="title" name="title" type="text" placeholder="例：弦分奏・基礎練会" required maxlength="50" />
+              <p class="hint">※必須（50文字以内）</p>
+            </div>
+
+            <div class="field">
+              <label for="schedule">イベント日程（2/18 13:00〜2/22 9:00 の範囲）</label>
+              <div class="row">
+                <select id="startTime" name="startTime" required></select>
+                <span class="sep">〜</span>
+                <select id="endTime" name="endTime" required></select>
+              </div>
+              <p class="hint">※必須（終了は開始より後）</p>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="detail">詳細（100文字以内）</label>
+            <textarea id="detail" name="detail" rows="3" placeholder="例：各校の練習法共有しながら基礎合奏！" maxlength="100"></textarea>
+            <div class="count"><span id="detailCount">0</span>/100</div>
+          </div>
+
+          <fieldset class="fieldset">
+            <legend>募集人数（任意）</legend>
+            <div class="grid3">
+              <div class="field">
+                <label for="minPeople">最小（人）</label>
+                <select id="minPeople" name="minPeople">
+                  <option value="">未設定</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="maxPeople">最大（人）</label>
+                <select id="maxPeople" name="maxPeople">
+                  <option value="">未設定</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="sr-only" for="dummy"> </label>
+                <div class="note-card">
+                  <p class="note-title">ヒント</p>
+                  <p class="note-text">未設定でもOK。設定する場合は <strong>最小 ≤ 最大</strong> にしてください。</p>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>あなたの情報（作成者）</legend>
+
+            <div class="grid2">
+              <div class="field">
+                <label for="name">名前</label>
+                <input id="name" name="name" type="text" placeholder="例：山田 太郎" required maxlength="30" />
+              </div>
+
+              <div class="field">
+                <label for="univ">大学名</label>
+                <select id="univ" name="univ" required>
+                  <option value="">選択してください</option>
+                  <option value="京大">京大</option>
+                  <option value="慶應">慶應</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid2">
+              <div class="field">
+                <label for="grade">学年</label>
+                <select id="grade" name="grade" required>
+                  <option value="">選択してください</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5+">5~</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="part">パート</label>
+                <select id="part" name="part" required>
+                  <option value="">選択してください</option>
+                  <option value="Vn">Vn</option>
+                  <option value="Va">Va</option>
+                  <option value="Vc">Vc</option>
+                  <option value="Ob">Ob</option>
+                  <option value="Cl">Cl</option>
+                  <option value="Fl">Fl</option>
+                  <option value="Fg">Fg</option>
+                  <option value="Tp">Tp</option>
+                  <option value="Trb">Trb</option>
+                  <option value="Hr">Hr</option>
+                  <option value="その他">その他</option>
+                </select>
+              </div>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <a class="btn ghost" href="index.html">戻る</a>
+            <button class="btn square orange" type="submit">作成する</button>
+          </div>
+
+          <div id="formMsg" class="msg" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>© <span id="year"></span> 京大×慶應 ジョイント交流</p>
+      <a class="to-top" href="events.html">募集中のイベント</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
