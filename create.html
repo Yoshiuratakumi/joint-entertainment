@@ -18,7 +18,7 @@
       </a>
 
       <nav class="nav" aria-label="メインメニュー">
-        <a href="events.html">募集中のイベント</a>
+        <a href="events.html">募集中イベント</a>
         <a class="active" href="create.html">イベントを作成</a>
         <a href="join.html">イベントに参加</a>
       </nav>
@@ -40,26 +40,10 @@
         <form id="createForm" class="panel form" novalidate>
           <div class="grid2">
             <div class="field">
-              <label for="deadlineDate">締め切り（参加期限）</label>
-              <input
-                id="deadlineDate"
-                name="deadlineDate"
-                type="date"
-                required
-                min="2026-01-01"
-                max="2026-02-23"
-              />
-              <p class="hint">※必須（2026/1/1〜2026/2/23）。締め切り時刻は選択日の <strong>23:59</strong> です。</p>
+              <label for="title">あなたの企画タイトル名</label>
+              <input id="title" name="title" type="text" placeholder="例：弦分奏・基礎練会" required maxlength="50" />
+              <p class="hint">※必須（50文字以内）</p>
             </div>
-          
-            <div class="field">
-              <label class="sr-only" for="dummy"> </label>
-              <div class="note-card">
-                <p class="note-title">メモ</p>
-                <p class="note-text">締め切りは日付のみ指定（時刻は自動で23:59）。締め切り後は参加/退出がロックされます。</p>
-              </div>
-            </div>
-          </div>
 
             <div class="field">
               <label for="schedule">イベント日程（2/18 13:00〜2/22 9:00 の範囲）</label>
@@ -72,18 +56,26 @@
             </div>
           </div>
 
+          <!-- ✅締め切り：カレンダーで日付選択 -->
           <div class="grid2">
             <div class="field">
-              <label for="deadline">締め切り（参加期限）</label>
-              <select id="deadline" name="deadline" required></select>
-              <p class="hint">※必須（締め切りを過ぎると参加/退出がロック）</p>
+              <label for="deadlineDate">締め切り（参加期限）</label>
+              <input
+                id="deadlineDate"
+                name="deadlineDate"
+                type="date"
+                required
+                min="2026-01-01"
+                max="2026-02-23"
+              />
+              <p class="hint">※必須（2026/1/1〜2026/2/23）。締め切り時刻は選択日の <strong>23:59</strong> です。</p>
             </div>
 
             <div class="field">
               <label class="sr-only" for="dummy"> </label>
               <div class="note-card">
                 <p class="note-title">メモ</p>
-                <p class="note-text">締め切りは「開始時刻より前」をおすすめにしています（自動で整合します）。</p>
+                <p class="note-text">締め切り後は参加/退出が自動でロックされます。</p>
               </div>
             </div>
           </div>
@@ -185,7 +177,7 @@
   <footer class="site-footer">
     <div class="container footer-inner">
       <p>© <span id="year"></span> 京大×慶應 ジョイント交流</p>
-      <a class="to-top" href="events.html">募集中のイベント</a>
+      <a class="to-top" href="events.html">募集中イベント</a>
     </div>
   </footer>
 
@@ -194,4 +186,3 @@
   </script>
 </body>
 </html>
-
