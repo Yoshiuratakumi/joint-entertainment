@@ -1,9 +1,26 @@
-const STORAGE_KEY = "joint_events_v2";
+/* =========================
+   京大×慶應 交流マッチング（Firestore同期版）
+   - イベント作成/参加/退出/削除
+   - 締め切り後は参加/退出ロック
+   - 別端末でも同じ一覧に即時反映（onSnapshot）
+   ========================= */
+
+// ===== Firebase config（あなたの値）=====
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBBMdc9G-4QxkWr99o0yy29Xu5F-XCWP4U",
+  authDomain: "kyodai-keio-joint-2026.firebaseapp.com",
+  projectId: "kyodai-keio-joint-2026",
+  storageBucket: "kyodai-keio-joint-2026.firebasestorage.app",
+  messagingSenderId: "44729432402",
+  appId: "1:44729432402:web:f6fe7821d1b0b473f6228b",
+  measurementId: "G-D6TBZKYLHR"
+};
+
+// みんなで共有する“部屋”（1サイト=1つでOK）
+const ROOM_ID = "main"; // 例: "kyodai-keio-2026" に変えてもOK
+
+// ===== local device id（退出/削除権限に使用）=====
 const DEVICE_KEY = "joint_device_id_v1";
-
-// 旧キーがあったら自動移行（過去版対策）
-const OLD_KEYS = ["joint_events_v1", "joint_events", "joint_events_v2_old"];
-
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_KEY);
   if (!id) {
@@ -11,34 +28,6 @@ function getDeviceId() {
     localStorage.setItem(DEVICE_KEY, id);
   }
   return id;
-}
-
-function migrateOldStorageIfNeeded() {
-  if (localStorage.getItem(STORAGE_KEY)) return;
-  for (const k of OLD_KEYS) {
-    const v = localStorage.getItem(k);
-    if (v) {
-      localStorage.setItem(STORAGE_KEY, v);
-      return;
-    }
-  }
-}
-
-function loadEvents() {
-  migrateOldStorageIfNeeded();
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch (e) {
-    console.error("loadEvents failed:", e);
-    return [];
-  }
-}
-
-function saveEvents(events) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
 }
 
 function uid() {
@@ -63,8 +52,8 @@ function formatJP(iso) {
   return `${m}/${day} ${hh}:${mm}`;
 }
 
+// "YYYY-MM-DD" -> その日の 23:59（ローカル）のISO
 function deadlineDateToISO(dateStr) {
-  // "YYYY-MM-DD" -> その日の 23:59（ローカル）
   const [y, m, d] = dateStr.split("-").map(Number);
   const local = new Date(y, m - 1, d, 23, 59, 0, 0);
   return local.toISOString();
@@ -129,32 +118,50 @@ function fillPeopleSelect(sel, maxN = 60) {
   }
 }
 
-/* ===== 参加者退出（本人デバイスのみ） ===== */
-function removeParticipantById(events, eventId, personId, deviceId) {
-  const ev = events.find(x => x.id === eventId);
-  if (!ev) return { ok: false, reason: "イベントが見つかりませんでした。" };
-  if (isLocked(ev)) return { ok: false, reason: "締め切り後のため、退出できません。" };
+// ===== Firestore（compat）=====
+let db = null;
+let roomRef = null;
 
-  const p = ev.participants.find(x => x.id === personId);
-  if (!p) return { ok: false, reason: "参加者が見つかりませんでした。" };
-  if (p.deviceId !== deviceId) return { ok: false, reason: "この端末から参加した本人のみ退出できます。" };
-
-  ev.participants = ev.participants.filter(x => x.id !== personId);
-  saveEvents(events);
-  return { ok: true, reason: "退出しました。" };
+function initFirebase() {
+  if (!window.firebase) {
+    throw new Error("Firebase SDKが読み込まれていません。HTMLの<head>に compat のscriptを追加してください。");
+  }
+  if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+  roomRef = db.collection("rooms").doc(ROOM_ID);
 }
 
-/* ===== イベント削除（作成者デバイスのみ） ===== */
-function deleteEvent(events, eventId, deviceId) {
-  const ev = events.find(x => x.id === eventId);
-  if (!ev) return { ok: false, reason: "イベントが見つかりませんでした。" };
-  if (ev.creatorDeviceId !== deviceId) return { ok: false, reason: "作成者（この端末）だけがイベントを削除できます。" };
-
-  saveEvents(events.filter(x => x.id !== eventId));
-  return { ok: true, reason: "イベントを削除しました。" };
+// 初回: roomドキュメントが無ければ作る
+async function ensureRoomDoc() {
+  const snap = await roomRef.get();
+  if (!snap.exists) {
+    await roomRef.set({ events: [], updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }
 }
 
-/* ===== events.html 表示 ===== */
+async function loadEventsRemote() {
+  const snap = await roomRef.get();
+  if (!snap.exists) return [];
+  const data = snap.data() || {};
+  return Array.isArray(data.events) ? data.events : [];
+}
+
+// 競合に強い保存（transaction）
+async function updateEventsRemote(mutatorFn) {
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(roomRef);
+    const data = snap.exists ? (snap.data() || {}) : {};
+    const events = Array.isArray(data.events) ? data.events : [];
+    const nextEvents = mutatorFn(events);
+
+    tx.set(roomRef, {
+      events: nextEvents,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+}
+
+// ===== events.html 表示 =====
 function renderEventsList(container, events, deviceId) {
   container.innerHTML = "";
   const sorted = [...events].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
@@ -173,7 +180,7 @@ function renderEventsList(container, events, deviceId) {
 
     const creator = `${ev.creator.name}（${ev.creator.univ}・${ev.creator.grade}年・${ev.creator.part}）`;
 
-    const peopleItems = ev.participants.map(p => {
+    const peopleItems = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
       const canRemove = (!locked) && (p.deviceId === deviceId);
       if (canRemove) {
@@ -201,7 +208,7 @@ function renderEventsList(container, events, deviceId) {
         </div>
         <p class="card-detail">${escapeHtml(ev.detail || "（詳細なし）")}</p>
         <div class="people">
-          <p class="people-title">現在の参加者（${ev.participants.length}名）</p>
+          <p class="people-title">現在の参加者（${(ev.participants || []).length}名）</p>
           <ul class="people-list">${peopleItems || "<li>まだ参加者がいません</li>"}</ul>
           <p class="hint">※自分の名前（この端末で参加したもの）はタップで退出できます（締切前のみ）</p>
         </div>
@@ -211,8 +218,28 @@ function renderEventsList(container, events, deviceId) {
   }
 }
 
-function bindEventsPageActions(rootEl, refreshFn, deviceId) {
-  rootEl.addEventListener("click", (e) => {
+function initEventsPage(deviceId) {
+  const list = document.getElementById("eventsList");
+  const count = document.getElementById("eventCount");
+  const empty = document.getElementById("emptyState");
+
+  // リアルタイム購読：他端末の変更が即反映
+  roomRef.onSnapshot((snap) => {
+    const data = snap.data() || {};
+    const events = Array.isArray(data.events) ? data.events : [];
+    count.textContent = String(events.length);
+
+    if (events.length === 0) {
+      empty.hidden = false;
+      list.innerHTML = "";
+      return;
+    }
+    empty.hidden = true;
+    renderEventsList(list, events, deviceId);
+  });
+
+  // 退出/削除
+  document.body.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
     const action = t.getAttribute("data-action");
@@ -223,46 +250,40 @@ function bindEventsPageActions(rootEl, refreshFn, deviceId) {
       const personId = t.getAttribute("data-person-id");
       if (!eventId || !personId) return;
       if (!confirm("このイベントから退出しますか？")) return;
-      const events = loadEvents();
-      alert(removeParticipantById(events, eventId, personId, deviceId).reason);
-      refreshFn();
-      return;
+
+      await updateEventsRemote((events) => {
+        const ev = events.find(x => x.id === eventId);
+        if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
+        if (isLocked(ev)) { alert("締め切り後のため退出できません。"); return events; }
+
+        const p = (ev.participants || []).find(x => x.id === personId);
+        if (!p) { alert("参加者が見つかりませんでした。"); return events; }
+        if (p.deviceId !== deviceId) { alert("この端末から参加した本人のみ退出できます。"); return events; }
+
+        ev.participants = (ev.participants || []).filter(x => x.id !== personId);
+        alert("退出しました。");
+        return events;
+      });
     }
 
     if (action === "delete-event") {
       const eventId = t.getAttribute("data-event-id");
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
-      const events = loadEvents();
-      alert(deleteEvent(events, eventId, deviceId).reason);
-      refreshFn();
-      return;
+
+      await updateEventsRemote((events) => {
+        const ev = events.find(x => x.id === eventId);
+        if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
+        if (ev.creatorDeviceId !== deviceId) { alert("作成者（この端末）だけがイベントを削除できます。"); return events; }
+
+        alert("イベントを削除しました。");
+        return events.filter(x => x.id !== eventId);
+      });
     }
   });
 }
 
-function initEventsPage(deviceId) {
-  const list = document.getElementById("eventsList");
-  const count = document.getElementById("eventCount");
-  const empty = document.getElementById("emptyState");
-
-  function refresh() {
-    const events = loadEvents();
-    count.textContent = String(events.length);
-    if (events.length === 0) {
-      empty.hidden = false;
-      list.innerHTML = "";
-      return;
-    }
-    empty.hidden = true;
-    renderEventsList(list, events, deviceId);
-  }
-
-  bindEventsPageActions(document.body, refresh, deviceId);
-  refresh();
-}
-
-/* ===== join.html 表示（必要最低限：既存構成と互換） ===== */
+// ===== join.html 表示 =====
 function renderJoinList(container, events, deviceId) {
   container.innerHTML = "";
   const sorted = [...events].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
@@ -276,7 +297,7 @@ function renderJoinList(container, events, deviceId) {
         : "募集：未設定";
     const statusBadge = locked ? `<span class="badge locked">締切済み</span>` : `<span class="badge">募集中</span>`;
 
-    const participantsHtml = ev.participants.map(p => {
+    const participantsHtml = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
       const canRemove = (!locked) && (p.deviceId === deviceId);
       if (canRemove) {
@@ -285,7 +306,7 @@ function renderJoinList(container, events, deviceId) {
       return `<li>${escapeHtml(label)}</li>`;
     }).join("");
 
-    const atCap = (typeof ev.maxPeople === "number") && (ev.participants.length >= ev.maxPeople);
+    const atCap = (typeof ev.maxPeople === "number") && ((ev.participants || []).length >= ev.maxPeople);
     const joinDisabled = locked || atCap;
     const reason = locked ? "締切済みのため参加できません。" : (atCap ? "募集人数に達しています。" : "");
 
@@ -309,7 +330,7 @@ function renderJoinList(container, events, deviceId) {
         <p class="card-detail">${escapeHtml(ev.detail || "（詳細なし）")}</p>
 
         <div class="people">
-          <p class="people-title">現在の参加者（${ev.participants.length}名）</p>
+          <p class="people-title">現在の参加者（${(ev.participants || []).length}名）</p>
           <ul class="people-list">${participantsHtml || "<li>まだ参加者がいません</li>"}</ul>
           <p class="hint">※自分の名前（この端末で参加したもの）はタップで退出できます（締切前のみ）</p>
         </div>
@@ -382,8 +403,26 @@ function renderJoinList(container, events, deviceId) {
   });
 }
 
-function bindJoinPageActions(rootEl, deviceId) {
-  rootEl.addEventListener("click", (e) => {
+function initJoinPage(deviceId) {
+  const list = document.getElementById("joinList");
+  const empty = document.getElementById("emptyJoin");
+
+  // リアルタイム購読
+  roomRef.onSnapshot((snap) => {
+    const data = snap.data() || {};
+    const events = Array.isArray(data.events) ? data.events : [];
+
+    if (events.length === 0) {
+      empty.hidden = false;
+      list.innerHTML = "";
+      return;
+    }
+    empty.hidden = true;
+    renderJoinList(list, events, deviceId);
+  });
+
+  // 退出/削除/参加
+  list.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
     const action = t.getAttribute("data-action");
@@ -394,94 +433,92 @@ function bindJoinPageActions(rootEl, deviceId) {
       const personId = t.getAttribute("data-person-id");
       if (!eventId || !personId) return;
       if (!confirm("このイベントから退出しますか？")) return;
-      const events = loadEvents();
-      alert(removeParticipantById(events, eventId, personId, deviceId).reason);
-      renderJoinList(rootEl, loadEvents(), deviceId);
-      bindJoinForms(rootEl, deviceId);
-      return;
+
+      await updateEventsRemote((events) => {
+        const ev = events.find(x => x.id === eventId);
+        if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
+        if (isLocked(ev)) { alert("締め切り後のため退出できません。"); return events; }
+
+        const p = (ev.participants || []).find(x => x.id === personId);
+        if (!p) { alert("参加者が見つかりませんでした。"); return events; }
+        if (p.deviceId !== deviceId) { alert("この端末から参加した本人のみ退出できます。"); return events; }
+
+        ev.participants = (ev.participants || []).filter(x => x.id !== personId);
+        alert("退出しました。");
+        return events;
+      });
     }
 
     if (action === "delete-event") {
       const eventId = t.getAttribute("data-event-id");
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
-      const events = loadEvents();
-      alert(deleteEvent(events, eventId, deviceId).reason);
-      renderJoinList(rootEl, loadEvents(), deviceId);
-      bindJoinForms(rootEl, deviceId);
-      return;
+
+      await updateEventsRemote((events) => {
+        const ev = events.find(x => x.id === eventId);
+        if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
+        if (ev.creatorDeviceId !== deviceId) { alert("作成者（この端末）だけがイベントを削除できます。"); return events; }
+
+        alert("イベントを削除しました。");
+        return events.filter(x => x.id !== eventId);
+      });
     }
   });
-}
 
-function bindJoinForms(container, deviceId) {
-  container.querySelectorAll(".join-form").forEach(form => {
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const msg = form.querySelector(".msg");
-      msg.textContent = "";
+  // 参加フォーム submit（イベント委任）
+  list.addEventListener("submit", async (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.classList.contains("join-form")) return;
 
-      const evId = form.getAttribute("data-event-id");
-      const fd = new FormData(form);
+    e.preventDefault();
+    const msg = form.querySelector(".msg");
+    if (msg) msg.textContent = "";
 
-      const person = {
-        id: uid(),
-        name: String(fd.get("name") || "").trim(),
-        univ: fd.get("univ"),
-        grade: fd.get("grade"),
-        part: fd.get("part"),
-        deviceId,
-      };
+    const evId = form.getAttribute("data-event-id");
+    const fd = new FormData(form);
 
-      if (!person.name || !person.univ || !person.grade || !person.part) {
-        msg.textContent = "未入力の項目があります。すべて入力してください。";
-        return;
-      }
+    const person = {
+      id: uid(),
+      name: String(fd.get("name") || "").trim(),
+      univ: fd.get("univ"),
+      grade: fd.get("grade"),
+      part: fd.get("part"),
+      deviceId,
+    };
 
-      const events = loadEvents();
+    if (!person.name || !person.univ || !person.grade || !person.part) {
+      if (msg) msg.textContent = "未入力の項目があります。すべて入力してください。";
+      return;
+    }
+
+    await updateEventsRemote((events) => {
       const ev = events.find(x => x.id === evId);
-      if (!ev) { msg.textContent = "イベントが見つかりませんでした。"; return; }
-      if (isLocked(ev)) { msg.textContent = "締め切り後のため参加できません。"; return; }
+      if (!ev) { if (msg) msg.textContent = "イベントが見つかりませんでした。"; return events; }
+      if (isLocked(ev)) { if (msg) msg.textContent = "締め切り後のため参加できません。"; return events; }
+
+      ev.participants = ev.participants || [];
 
       const dup = ev.participants.some(p =>
         p.name === person.name && p.univ === person.univ && p.grade === person.grade && p.part === person.part
       );
-      if (dup) { msg.textContent = "すでに同じ情報で参加済みです。"; return; }
+      if (dup) { if (msg) msg.textContent = "すでに同じ情報で参加済みです。"; return events; }
 
       if (typeof ev.maxPeople === "number" && ev.participants.length >= ev.maxPeople) {
-        msg.textContent = "募集人数に達しています。"; return;
+        if (msg) msg.textContent = "募集人数に達しています。";
+        return events;
       }
 
       ev.participants.push(person);
-      saveEvents(events);
+      if (msg) msg.textContent = "参加しました！";
+      return events;
+    });
 
-      renderJoinList(container, loadEvents(), deviceId);
-      bindJoinForms(container, deviceId);
-    }, { once: true });
+    form.reset();
   });
 }
 
-function initJoinPage(deviceId) {
-  const list = document.getElementById("joinList");
-  const empty = document.getElementById("emptyJoin");
-
-  function refresh() {
-    const events = loadEvents();
-    if (events.length === 0) {
-      empty.hidden = false;
-      list.innerHTML = "";
-      return;
-    }
-    empty.hidden = true;
-    renderJoinList(list, events, deviceId);
-    bindJoinForms(list, deviceId);
-  }
-
-  bindJoinPageActions(list, deviceId);
-  refresh();
-}
-
-/* ===== create.html ===== */
+// ===== create.html =====
 function initCreatePage(deviceId) {
   const form = document.getElementById("createForm");
   const msg = document.getElementById("formMsg");
@@ -501,11 +538,13 @@ function initCreatePage(deviceId) {
   fillPeopleSelect(minSel, 60);
   fillPeopleSelect(maxSel, 60);
 
-  detail.addEventListener("input", () => {
-    detailCount.textContent = String(detail.value.length);
-  });
+  if (detail && detailCount) {
+    detail.addEventListener("input", () => {
+      detailCount.textContent = String(detail.value.length);
+    });
+  }
 
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     msg.textContent = "";
 
@@ -568,26 +607,35 @@ function initCreatePage(deviceId) {
         createdAtISO: new Date().toISOString(),
       };
 
-      const events = loadEvents();
-      events.push(ev);
-      saveEvents(events);
-
-      // デバッグ用：保存できているか確認
-      console.log("Saved events count:", loadEvents().length, loadEvents());
+      await updateEventsRemote((events) => {
+        events.push(ev);
+        return events;
+      });
 
       msg.textContent = "作成しました！募集中イベント一覧に移動します。";
       setTimeout(() => { window.location.href = "events.html"; }, 200);
     } catch (err) {
       console.error(err);
-      msg.textContent = "エラーが発生しました。開発者ツール(Console)のエラーを確認してください。";
+      msg.textContent = "保存に失敗しました。Firestoreルール/SDK読み込み/Consoleエラーを確認してください。";
     }
   });
 }
 
 /* ===== boot ===== */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const deviceId = getDeviceId();
   const page = document.body?.dataset?.page;
+
+  try {
+    initFirebase();
+    await ensureRoomDoc();
+  } catch (e) {
+    console.error(e);
+    // 画面に出せる場合はメッセージ表示
+    const el = document.getElementById("formMsg") || document.getElementById("emptyState") || document.getElementById("emptyJoin");
+    if (el) el.textContent = "Firebaseの読み込みに失敗しました。HTMLの<head>にFirebase scriptを追加してください。";
+    return;
+  }
 
   if (page === "create") initCreatePage(deviceId);
   if (page === "home2") initEventsPage(deviceId);
