@@ -29,7 +29,7 @@
     <section class="page-head">
       <div class="container">
         <h1 class="page-title">参加したい企画を選ぼう！</h1>
-        <p class="page-subtitle">イベントをクリックすると詳細が開き、入力して参加できます。</p>
+        <p class="page-subtitle">イベントをクリックすると詳細が開きます。締め切り後は参加/退出がロックされます。</p>
 
         <div class="page-actions">
           <a class="btn square orange" href="create.html">イベントを作成</a>
@@ -40,6 +40,10 @@
 
     <section class="section">
       <div class="container">
+        <div class="toolbar simple">
+          <span class="pill lemon">※自分が参加した名前はタップで退出できます（締切前のみ）</span>
+        </div>
+
         <div id="joinList" class="accordion"></div>
 
         <div id="emptyJoin" class="empty" hidden>
