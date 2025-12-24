@@ -54,13 +54,21 @@
               </div>
               <p class="hint">※必須（終了は開始より後）</p>
             </div>
-          </div>
-
-          <div class="grid2">
-            <div class="field">
-              <label for="deadline">締め切り（参加期限）</label>
-              <select id="deadline" name="deadline" required></select>
-              <p class="hint">※必須（締め切りを過ぎると参加/退出がロック）</p>
+            </div>
+            
+            <div class="grid2">
+              <div class="field">
+                <label for="deadlineDate">締め切り（参加期限）</label>
+                <input
+                  id="deadlineDate"
+                  name="deadlineDate"
+                  type="date"
+                  required
+                  min="2026-01-01"
+                  max="2026-02-22"
+                />
+                <p class="hint">※必須（2026/1/1〜2026/2/22）。締め切り時刻は<strong>23:59</strong>固定です。</p>
+              </div>
             </div>
 
           <div class="field">
@@ -169,5 +177,6 @@
   </script>
 </body>
 </html>
+
 
 
