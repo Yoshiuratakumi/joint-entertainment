@@ -94,20 +94,17 @@ function fillSelectFromTimes(sel) {
   }
 }
 
-function fillTimeSelects(startSel, endSel, deadlineSel) {
+function fillTimeSelects(startSel, endSel) {
   fillSelectFromTimes(startSel);
   fillSelectFromTimes(endSel);
-  fillSelectFromTimes(deadlineSel);
 
-  // 初期：開始=最初、終了=+2h、締切=開始と同じ
+  // 初期：開始=最初、終了=+2h
   startSel.selectedIndex = 0;
   endSel.selectedIndex = Math.min(2, endSel.options.length - 1);
-  deadlineSel.selectedIndex = 0;
 
   function ensureConsistency() {
     const s = new Date(startSel.value).getTime();
     const e = new Date(endSel.value).getTime();
-    const d = new Date(deadlineSel.value).getTime();
 
     // end > start
     if (e <= s) {
@@ -115,6 +112,11 @@ function fillTimeSelects(startSel, endSel, deadlineSel) {
       const sIdx = opts.findIndex(o => o.value === startSel.value);
       endSel.selectedIndex = Math.min(sIdx + 2, endSel.options.length - 1);
     }
+  }
+
+  startSel.addEventListener("change", ensureConsistency);
+  endSel.addEventListener("change", ensureConsistency);
+}
 
     // deadline <= start を推奨（自動整合）
     if (d > s) {
@@ -668,3 +670,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
+// "YYYY-MM-DD" を「その日 23:59（ローカル時刻）」の ISO に変換
+function deadlineDateToISO(dateStr) {
+  // dateStr例: "2026-02-10"
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const local = new Date(y, m - 1, d, 23, 59, 0, 0); // ローカル時刻で23:59
+  return local.toISOString();
+}
