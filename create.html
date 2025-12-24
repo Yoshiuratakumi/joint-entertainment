@@ -54,26 +54,37 @@
               </div>
               <p class="hint">※必須（終了は開始より後）</p>
             </div>
+          </div>
+
+          <!-- ✅締め切り：日付入力（2026/1/1〜2026/2/22）、時刻は23:59固定 -->
+          <div class="grid2">
+            <div class="field">
+              <label for="deadlineDate">締め切り（参加期限）</label>
+              <input
+                id="deadlineDate"
+                name="deadlineDate"
+                type="date"
+                required
+                min="2026-01-01"
+                max="2026-02-22"
+              />
+              <p class="hint">※必須（2026/1/1〜2026/2/22）。締め切り時刻は<strong>23:59</strong>固定です。</p>
             </div>
-            
-            <div class="grid2">
-              <div class="field">
-                <label for="deadlineDate">締め切り（参加期限）</label>
-                <input
-                  id="deadlineDate"
-                  name="deadlineDate"
-                  type="date"
-                  required
-                  min="2026-01-01"
-                  max="2026-02-22"
-                />
-                <p class="hint">※必須（2026/1/1〜2026/2/22）。締め切り時刻は<strong>23:59</strong>固定です。</p>
+
+            <div class="field">
+              <label class="sr-only" for="dummy"> </label>
+              <div class="note-card">
+                <p class="note-title">メモ</p>
+                <p class="note-text">締め切り後は参加/退出が自動でロックされます。</p>
               </div>
             </div>
+          </div>
 
           <div class="field">
             <label for="detail">詳細（100文字以内）</label>
-            <textarea id="detail" name="detail" rows="3" placeholder="例：京大生がおすすめの穴場グルメを紹介します！沢山の慶應生の参加をお待ちしてます。" maxlength="100"></textarea>
+            <textarea id="detail" name="detail" rows="3"
+              placeholder="例：京大生がおすすめの穴場グルメを紹介します！沢山の慶應生の参加をお待ちしてます。"
+              maxlength="100"></textarea>
             <div class="count"><span id="detailCount">0</span>/100</div>
           </div>
 
@@ -177,6 +188,3 @@
   </script>
 </body>
 </html>
-
-
-
