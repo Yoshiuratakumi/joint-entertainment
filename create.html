@@ -29,7 +29,9 @@
     <section class="page-head">
       <div class="container">
         <h1 class="page-title">あなたのやりたい企画を作成しよう！</h1>
-        <p class="page-subtitle">作成後、あなたの情報は「現在の参加者」にも自動で追加されます。</p>
+        <p class="page-subtitle">
+          作成者は「現在の参加者」に自動で追加されます。締め切り後は参加/退出がロックされます。
+        </p>
       </div>
     </section>
 
@@ -51,6 +53,22 @@
                 <select id="endTime" name="endTime" required></select>
               </div>
               <p class="hint">※必須（終了は開始より後）</p>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="field">
+              <label for="deadline">締め切り（参加期限）</label>
+              <select id="deadline" name="deadline" required></select>
+              <p class="hint">※必須（締め切りを過ぎると参加/退出がロック）</p>
+            </div>
+
+            <div class="field">
+              <label class="sr-only" for="dummy"> </label>
+              <div class="note-card">
+                <p class="note-title">メモ</p>
+                <p class="note-text">締め切りは「開始時刻より前」をおすすめにしています（自動で整合します）。</p>
+              </div>
             </div>
           </div>
 
@@ -76,10 +94,10 @@
                 </select>
               </div>
               <div class="field">
-                <label class="sr-only" for="dummy"> </label>
+                <label class="sr-only" for="dummy2"> </label>
                 <div class="note-card">
                   <p class="note-title">ヒント</p>
-                  <p class="note-text">未設定でもOK。設定する場合は <strong>最小 ≤ 最大</strong> にしてください。</p>
+                  <p class="note-text">未設定でもOK。設定する場合は <strong>最小 ≤ 最大</strong>。</p>
                 </div>
               </div>
             </div>
