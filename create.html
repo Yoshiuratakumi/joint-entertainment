@@ -40,10 +40,26 @@
         <form id="createForm" class="panel form" novalidate>
           <div class="grid2">
             <div class="field">
-              <label for="title">あなたの企画タイトル名</label>
-              <input id="title" name="title" type="text" placeholder="例：弦分奏・基礎練会" required maxlength="50" />
-              <p class="hint">※必須（50文字以内）</p>
+              <label for="deadlineDate">締め切り（参加期限）</label>
+              <input
+                id="deadlineDate"
+                name="deadlineDate"
+                type="date"
+                required
+                min="2026-01-01"
+                max="2026-02-23"
+              />
+              <p class="hint">※必須（2026/1/1〜2026/2/23）。締め切り時刻は選択日の <strong>23:59</strong> です。</p>
             </div>
+          
+            <div class="field">
+              <label class="sr-only" for="dummy"> </label>
+              <div class="note-card">
+                <p class="note-title">メモ</p>
+                <p class="note-text">締め切りは日付のみ指定（時刻は自動で23:59）。締め切り後は参加/退出がロックされます。</p>
+              </div>
+            </div>
+          </div>
 
             <div class="field">
               <label for="schedule">イベント日程（2/18 13:00〜2/22 9:00 の範囲）</label>
@@ -178,3 +194,4 @@
   </script>
 </body>
 </html>
+
