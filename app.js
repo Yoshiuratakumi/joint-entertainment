@@ -2,7 +2,7 @@
    京大×慶應 交流マッチング
    - localStorage 永続化
    - 参加者：本人（同一ブラウザ）なら名前タップで退出
-   - 締切：期限後は参加/退出ロック（締切は日付指定→23:59固定）
+   - 締切：期限後は参加/退出ロック
    - イベント削除：作成者（同一ブラウザ）だけ削除可
    ========================= */
 
@@ -63,13 +63,6 @@ function nowISO() {
   return new Date().toISOString();
 }
 
-// ✅ "YYYY-MM-DD" を「その日 23:59（ローカル時刻）」の ISO に変換
-function deadlineDateToISO(dateStr) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const local = new Date(y, m - 1, d, 23, 59, 0, 0); // ローカル時刻 23:59
-  return local.toISOString();
-}
-
 function isLocked(ev) {
   return new Date(nowISO()).getTime() > new Date(ev.deadlineISO).getTime();
 }
@@ -101,27 +94,40 @@ function fillSelectFromTimes(sel) {
   }
 }
 
-function fillTimeSelects(startSel, endSel) {
+function fillTimeSelects(startSel, endSel, deadlineSel) {
   fillSelectFromTimes(startSel);
   fillSelectFromTimes(endSel);
+  fillSelectFromTimes(deadlineSel);
 
-  // 初期：開始=最初、終了=+2h
+  // 初期：開始=最初、終了=+2h、締切=開始と同じ
   startSel.selectedIndex = 0;
   endSel.selectedIndex = Math.min(2, endSel.options.length - 1);
+  deadlineSel.selectedIndex = 0;
 
   function ensureConsistency() {
     const s = new Date(startSel.value).getTime();
     const e = new Date(endSel.value).getTime();
+    const d = new Date(deadlineSel.value).getTime();
 
+    // end > start
     if (e <= s) {
       const opts = Array.from(endSel.options);
       const sIdx = opts.findIndex(o => o.value === startSel.value);
       endSel.selectedIndex = Math.min(sIdx + 2, endSel.options.length - 1);
     }
+
+    // deadline <= start を推奨（自動整合）
+    if (d > s) {
+      // deadline を start に合わせる
+      const opts = Array.from(deadlineSel.options);
+      const sIdx = opts.findIndex(o => o.value === startSel.value);
+      deadlineSel.selectedIndex = Math.max(0, sIdx);
+    }
   }
 
   startSel.addEventListener("change", ensureConsistency);
   endSel.addEventListener("change", ensureConsistency);
+  deadlineSel.addEventListener("change", ensureConsistency);
 }
 
 function fillPeopleSelect(sel, maxN = 60) {
@@ -145,6 +151,7 @@ function removeParticipantById(events, eventId, personId, deviceId) {
 
   if (p.deviceId !== deviceId) return { ok: false, reason: "この端末から参加した本人のみ退出できます。" };
 
+  // 作成者が退出して参加者0になると困る場合もあるが、要件上OK
   ev.participants = ev.participants.filter(x => x.id !== personId);
   saveEvents(events);
   return { ok: true, reason: "退出しました。" };
@@ -189,6 +196,7 @@ function renderEventsList(container, events, deviceId) {
       if (canRemove) {
         return `<li><button class="name-btn" data-action="leave" data-event-id="${escapeHtml(ev.id)}" data-person-id="${escapeHtml(p.id)}" type="button">${escapeHtml(label)}</button></li>`;
       }
+      // ロック中 or 他人はただの文字
       return `<li>${escapeHtml(label)}</li>`;
     }).join("");
 
@@ -289,8 +297,10 @@ function renderJoinList(container, events, deviceId) {
       return `<li>${escapeHtml(label)}</li>`;
     }).join("");
 
+    // capacity check
     const atCap = (typeof ev.maxPeople === "number") && (ev.participants.length >= ev.maxPeople);
     const joinDisabled = locked || atCap;
+
     const reason = locked ? "締切済みのため参加できません。" : (atCap ? "募集人数に達しています。" : "");
 
     const canDelete = (ev.creatorDeviceId === deviceId);
@@ -377,6 +387,7 @@ function renderJoinList(container, events, deviceId) {
     container.appendChild(item);
   }
 
+  // accordion toggle
   container.querySelectorAll(".acc-item").forEach(item => {
     const head = item.querySelector(".acc-head");
     head.addEventListener("click", () => {
@@ -406,7 +417,7 @@ function bindJoinPageActions(rootEl, deviceId) {
       alert(res.reason);
 
       renderJoinList(rootEl, loadEvents(), deviceId);
-      bindJoinForms(rootEl, deviceId);
+      bindJoinForms(rootEl, deviceId); // forms再バインド
       return;
     }
 
@@ -462,6 +473,7 @@ function bindJoinForms(container, deviceId) {
         return;
       }
 
+      // duplicate check（同名+大学+学年+パート）
       const dup = ev.participants.some(p =>
         p.name === person.name && p.univ === person.univ && p.grade === person.grade && p.part === person.part
       );
@@ -470,6 +482,7 @@ function bindJoinForms(container, deviceId) {
         return;
       }
 
+      // capacity check
       if (typeof ev.maxPeople === "number" && ev.participants.length >= ev.maxPeople) {
         msg.textContent = "募集人数に達しています。別の企画をご検討ください。";
         return;
@@ -481,6 +494,7 @@ function bindJoinForms(container, deviceId) {
       msg.textContent = "参加しました！※自分の名前はタップで退出できます（締切前のみ）";
       form.reset();
 
+      // refresh view
       renderJoinList(container, loadEvents(), deviceId);
       bindJoinForms(container, deviceId);
     }, { once: true });
@@ -496,13 +510,8 @@ function initCreatePage(deviceId) {
 
   const startSel = document.getElementById("startTime");
   const endSel = document.getElementById("endTime");
-  fillTimeSelects(startSel, endSel);
-
-  const deadlineDateEl = document.getElementById("deadlineDate");
-  if (deadlineDateEl && !deadlineDateEl.value) {
-    // デフォルトを最大日にしておく（必要なら変更OK）
-    deadlineDateEl.value = "2026-02-23";
-  }
+  const deadlineSel = document.getElementById("deadline");
+  fillTimeSelects(startSel, endSel, deadlineSel);
 
   const minSel = document.getElementById("minPeople");
   const maxSel = document.getElementById("maxPeople");
@@ -523,18 +532,7 @@ function initCreatePage(deviceId) {
     const detailText = String(fd.get("detail") || "").trim();
     const startISO = String(fd.get("startTime") || "");
     const endISO = String(fd.get("endTime") || "");
-
-    // ✅ deadline: date -> 23:59 ISO
-    const deadlineDate = String(fd.get("deadlineDate") || ""); // "YYYY-MM-DD"
-    if (!deadlineDate) {
-      msg.textContent = "締め切り日付を選択してください。";
-      return;
-    }
-    if (deadlineDate < "2026-01-01" || deadlineDate > "2026-02-23") {
-      msg.textContent = "締め切りは 2026/1/1〜2026/2/23 の範囲で選択してください。";
-      return;
-    }
-    const deadlineISO = deadlineDateToISO(deadlineDate);
+    const deadlineISO = String(fd.get("deadline") || "");
 
     const minRaw = String(fd.get("minPeople") || "").trim();
     const maxRaw = String(fd.get("maxPeople") || "").trim();
@@ -551,7 +549,8 @@ function initCreatePage(deviceId) {
       deviceId,
     };
 
-    if (!title || !startISO || !endISO || !creator.name || !creator.univ || !creator.grade || !creator.part) {
+    // validate required
+    if (!title || !startISO || !endISO || !deadlineISO || !creator.name || !creator.univ || !creator.grade || !creator.part) {
       msg.textContent = "未入力の必須項目があります。すべて入力してください。";
       return;
     }
@@ -563,8 +562,16 @@ function initCreatePage(deviceId) {
 
     const s = new Date(startISO).getTime();
     const en = new Date(endISO).getTime();
+    const dl = new Date(deadlineISO).getTime();
+
     if (!(en > s)) {
       msg.textContent = "日程の終了は開始より後にしてください。";
+      return;
+    }
+
+    // 締切は開始より前（または同時刻）に自動整合しているが、念のため
+    if (dl > s) {
+      msg.textContent = "締め切りは開始時刻より前（または同時刻）にしてください。";
       return;
     }
 
