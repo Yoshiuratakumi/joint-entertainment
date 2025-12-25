@@ -111,7 +111,7 @@
             <legend>イメージ写真（任意）</legend>
 
             <div class="field">
-              <label for="imageUrl">画像URL（推奨：無料で確実）</label>
+              <label for="imageUrl">画像URL</label>
               <input
                 id="imageUrl"
                 name="imageUrl"
@@ -120,27 +120,13 @@
                 inputmode="url"
                 autocomplete="off"
               />
-              <p class="hint">※URLは <strong>.jpg/.jpeg/.png</strong> の直リンク推奨。URLを入れると下にプレビューが出ます。</p>
+              <p class="hint">※URLは <strong>.jpg/.jpeg/.png</strong> の直リンク推奨。URLを入れると下にプレビューが出ます。（無料版ではファイルのアップロード形式はできませんでしたm(__)m）</p>
 
               <div id="urlPreviewWrap" class="image-preview" hidden>
                 <img id="urlPreviewImg" alt="画像URLプレビュー" />
               </div>
             </div>
 
-            <div class="field">
-              <label for="eventImage">画像をアップロード（Storageが使える場合のみ / JPEG・PNG、10MBまで）</label>
-              <input
-                id="eventImage"
-                name="eventImage"
-                type="file"
-                accept="image/jpeg,image/png"
-              />
-              <p class="hint">※Storageが「アップグレード必須」になっている場合はアップロードに失敗します。その場合は画像URL方式を使ってください。</p>
-
-              <div id="imagePreviewWrap" class="image-preview" hidden>
-                <img id="imagePreview" alt="アップロード画像のプレビュー" />
-              </div>
-            </div>
           </fieldset>
 
           <fieldset class="fieldset">
@@ -218,3 +204,4 @@
   </script>
 </body>
 </html>
+
