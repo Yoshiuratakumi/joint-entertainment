@@ -22,6 +22,9 @@ const FIREBASE_CONFIG = {
 // みんなで共有する“部屋”（1サイト=1つでOK）
 const ROOM_ID = "main";
 
+// 1端末あたり作成できるイベント上限
+const MAX_EVENTS_PER_DEVICE = 5;
+
 // ===== local device id（退出/削除権限に使用）=====
 const DEVICE_KEY = "joint_device_id_v1";
 function getDeviceId() {
@@ -627,6 +630,25 @@ function initCreatePage(deviceId) {
   const form = document.getElementById("createForm");
   const msg = document.getElementById("formMsg");
 
+// ★作成数上限チェック（UI側）
+  const submitBtn = form.querySelector('button[type="submit"]');
+
+  (async () => {
+    try {
+      const eventsNow = await getEventsOnce();
+      const createdCount = eventsNow.filter(ev => ev.creatorDeviceId === deviceId).length;
+
+      if (createdCount >= MAX_EVENTS_PER_DEVICE) {
+        if (submitBtn) submitBtn.disabled = true;
+        msg.textContent = `この端末から作成できるイベントは${MAX_EVENTS_PER_DEVICE}件までです。（現在：${createdCount}件）`;
+      }
+    } catch (e) {
+      // 取得に失敗してもフォームは使えるようにしておく
+      console.warn("作成数チェックに失敗:", e);
+    }
+  })();
+
+
   const detail = document.getElementById("detail");
   const detailCount = document.getElementById("detailCount");
 
@@ -818,7 +840,13 @@ function initCreatePage(deviceId) {
       };
 
       msg.textContent = "保存中…";
+
       await updateEventsRemote((events) => {
+        const createdCount = events.filter(x => x.creatorDeviceId === deviceId).length;
+        if (createdCount >= MAX_EVENTS_PER_DEVICE) {
+          // transaction を中断させる
+          throw new Error(`CREATE_LIMIT_REACHED:${createdCount}`);
+        }
         events.push(ev);
         return events;
       });
@@ -828,6 +856,18 @@ function initCreatePage(deviceId) {
 
     } catch (err) {
       console.error(err);
+
+      // ★上限で弾かれたのに画像だけ上がってしまった場合は削除
+      try {
+        const isLimit = String(err?.message || "").startsWith("CREATE_LIMIT_REACHED");
+        if (isLimit) {
+          // eventId は submit 内で作っている前提（あなたのコードの eventId 変数）
+          await imageRefForEvent(eventId).delete().catch(() => {});
+          msg.textContent = `この端末から作成できるイベントは${MAX_EVENTS_PER_DEVICE}件までです。`;
+          return;
+        }
+      } catch (_) {}
+
       const code = err?.code ? `（${err.code}）` : "";
       const message = err?.message ? err.message : "不明なエラー";
       msg.textContent = `保存に失敗しました${code}：${message}`;
@@ -856,4 +896,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
 
