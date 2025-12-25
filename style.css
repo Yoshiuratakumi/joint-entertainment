@@ -529,3 +529,17 @@ legend{ font-weight: 1000; padding: 0 6px; }
 .event-image {
   margin-bottom: 12px;
 }
+
+.image-preview {
+  margin-top: 10px;
+}
+.image-preview img,
+.event-image {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  display: block;
+}
+.event-image {
+  margin-bottom: 12px;
+}
