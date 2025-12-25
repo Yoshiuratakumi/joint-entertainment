@@ -1,12 +1,11 @@
 /* =========================
-   京大×慶應 交流マッチング（Firestore同期 + 画像(任意)版）
+   京大×慶應 交流マッチング（Firestore同期 + 画像URL/アップロード両対応版）
    - イベント作成/参加/退出/削除
    - 締め切り後は参加/退出ロック
    - 別端末でも同じ一覧に即時反映（onSnapshot）
    - 画像（任意）：
-       A) URL入力（推奨：無料で確実）
-       B) Firebase Storageアップロード（使える場合のみ自動で試す）
-          → 失敗したらURL方式にフォールバック（イベント作成は続行）
+       (A) 画像URL（http/httpsならOK。拡張子なしの共有リンクも可）
+       (B) ファイル（JPEG/PNG 10MBまで）→ Storageに保存（Storageが有効な場合）
    ========================= */
 
 // ===== Firebase config（あなたの値）=====
@@ -14,7 +13,6 @@ const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBBMdc9G-4QxkWr99o0yy29Xu5F-XCWP4U",
   authDomain: "kyodai-keio-joint-2026.firebaseapp.com",
   projectId: "kyodai-keio-joint-2026",
-  // ★ここは .appspot.com が正
   storageBucket: "kyodai-keio-joint-2026.appspot.com",
   messagingSenderId: "44729432402",
   appId: "1:44729432402:web:f6fe7821d1b0b473f6228b",
@@ -22,7 +20,7 @@ const FIREBASE_CONFIG = {
 };
 
 // みんなで共有する“部屋”（1サイト=1つでOK）
-const ROOM_ID = "main"; // 例: "kyodai-keio-2026" に変えてもOK
+const ROOM_ID = "main";
 
 // ===== local device id（退出/削除権限に使用）=====
 const DEVICE_KEY = "joint_device_id_v1";
@@ -123,56 +121,53 @@ function fillPeopleSelect(sel, maxN = 60) {
   }
 }
 
-/* ===== 画像（任意） ===== */
+/* ===== 画像：URL / ファイル 共通バリデーション ===== */
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
 function validateImageFile(file) {
   if (!file) return { ok: true, reason: "" };
   const okType = (file.type === "image/jpeg" || file.type === "image/png");
-  if (!okType) return { ok: false, reason: "画像は JPEG または PNG のみ対応です。" };
-  if (file.size > IMAGE_MAX_BYTES) return { ok: false, reason: "画像は 10MB 以内にしてください。" };
+  if (!okType) return { ok: false, reason: "画像ファイルは JPEG または PNG のみ対応です。" };
+  if (file.size > IMAGE_MAX_BYTES) return { ok: false, reason: "画像ファイルは 10MB 以内にしてください。" };
   return { ok: true, reason: "" };
 }
 
+// ✅URLは「http/https ならOK（拡張子チェックしない）」
 function validateImageUrl(url) {
-  if (!url) return { ok: true, reason: "" };
-  const okProtocol = /^https?:\/\//i.test(url);
-  if (!okProtocol) return { ok: false, reason: "画像URLは http(s) から始まるURLにしてください。" };
-  // 拡張子チェックは緩め（クエリ付きもOK）
-  const okExt = /\.(png|jpe?g)(\?.*)?$/i.test(url);
-  if (!okExt) {
-    return { ok: false, reason: "画像URLは .jpg / .jpeg / .png のURL（またはそれに相当する直リンク）を貼ってください。" };
-  }
+  const u = String(url || "").trim();
+  if (!u) return { ok: true, reason: "" };
+  if (u.length > 2000) return { ok: false, reason: "画像URLが長すぎます（2000文字以内にしてください）。" };
+  if (!/^https?:\/\//i.test(u)) return { ok: false, reason: "画像URLは http または https で始まるURLにしてください。" };
+  // 念のため危険なスキーム拒否
+  if (/^javascript:/i.test(u)) return { ok: false, reason: "そのURL形式は使用できません。" };
   return { ok: true, reason: "" };
+}
+
+function normalizeUrl(url) {
+  return String(url || "").trim();
 }
 
 /* ===== Firestore / Storage（compat） ===== */
 let db = null;
 let roomRef = null;
 let storage = null;
-let storageEnabled = false;
 
 function initFirebase() {
   if (!window.firebase) {
     throw new Error("Firebase SDKが読み込まれていません。HTMLの<head>に compat のscriptを追加してください。");
   }
   if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-
   db = firebase.firestore();
-  roomRef = db.collection("rooms").doc(ROOM_ID);
 
-  // Storage は使えないプロジェクトもあるので try/catch
-  try {
-    storage = firebase.storage();
-    storageEnabled = true;
-  } catch (e) {
-    storage = null;
-    storageEnabled = false;
+  // Storage SDK を読み込んでいない場合もあるので安全に
+  if (firebase.storage) {
+    try { storage = firebase.storage(); } catch (_) { storage = null; }
   }
+  roomRef = db.collection("rooms").doc(ROOM_ID);
 }
 
 function imageRefForEvent(eventId) {
-  // 固定パスにしておくと削除が簡単
+  if (!storage) return null;
   return storage.ref().child(`rooms/${ROOM_ID}/events/${eventId}/image`);
 }
 
@@ -199,11 +194,26 @@ async function updateEventsRemote(mutatorFn) {
   });
 }
 
-// いまのイベント一覧を1回だけ取得（削除時に画像情報を取る用途）
+// いまのイベント一覧を1回だけ取得（削除時に画像URLを取る用途）
 async function getEventsOnce() {
   const snap = await roomRef.get();
   const data = snap.exists ? (snap.data() || {}) : {};
   return Array.isArray(data.events) ? data.events : [];
+}
+
+/* ===== 画像表示：読み込み失敗したらリンクに切り替える ===== */
+function renderEventImageBlock(imageUrl) {
+  if (!imageUrl) return "";
+  const u = escapeHtml(imageUrl);
+  // onerror で画像を非表示にしてリンクを表示
+  return `
+    <div class="event-image-wrap">
+      <img class="event-image" src="${u}" alt="イベント画像" loading="lazy"
+        onerror="this.style.display='none'; this.nextElementSibling.hidden=false;">
+      <a class="btn ghost small" href="${u}" target="_blank" rel="noopener"
+        hidden>画像を開く</a>
+    </div>
+  `;
 }
 
 /* ===== events.html 表示 ===== */
@@ -225,9 +235,7 @@ function renderEventsList(container, events, deviceId) {
 
     const creator = `${ev.creator.name}（${ev.creator.univ}・${ev.creator.grade}年・${ev.creator.part}）`;
 
-    const imageTop = ev.imageUrl
-      ? `<img class="event-image" src="${escapeHtml(ev.imageUrl)}" alt="イベント画像" loading="lazy">`
-      : "";
+    const imageTop = renderEventImageBlock(ev.imageUrl);
 
     const peopleItems = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
@@ -273,7 +281,6 @@ function initEventsPage(deviceId) {
   const count = document.getElementById("eventCount");
   const empty = document.getElementById("emptyState");
 
-  // リアルタイム購読：他端末の変更が即反映
   roomRef.onSnapshot((snap) => {
     const data = snap.data() || {};
     const events = Array.isArray(data.events) ? data.events : [];
@@ -288,7 +295,6 @@ function initEventsPage(deviceId) {
     renderEventsList(list, events, deviceId);
   });
 
-  // 退出/削除
   document.body.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
@@ -321,11 +327,9 @@ function initEventsPage(deviceId) {
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
 
-      // 先に画像情報を取っておく
       const beforeEvents = await getEventsOnce();
       const target = beforeEvents.find(x => x.id === eventId);
-      const imagePath = target?.imagePath || null;
-      const imageSource = target?.imageSource || null; // "storage" | "url" | null
+      const hadImage = !!(target && target.imageUrl);
 
       await updateEventsRemote((events) => {
         const ev = events.find(x => x.id === eventId);
@@ -336,10 +340,11 @@ function initEventsPage(deviceId) {
         return events.filter(x => x.id !== eventId);
       });
 
-      // Storageの画像も削除（使ってた場合のみ。失敗しても無視）
-      if (storageEnabled && imageSource === "storage" && imagePath) {
+      // Storage画像を消せるのは storage が使える場合だけ
+      if (hadImage && storage) {
         try {
-          await storage.ref().child(imagePath).delete();
+          const ref = imageRefForEvent(eventId);
+          if (ref) await ref.delete();
         } catch (err) {
           console.warn("画像の削除に失敗しました（無視して続行）:", err);
         }
@@ -362,9 +367,7 @@ function renderJoinList(container, events, deviceId) {
         : "募集：未設定";
     const statusBadge = locked ? `<span class="badge locked">締切済み</span>` : `<span class="badge">募集中</span>`;
 
-    const imageTop = ev.imageUrl
-      ? `<img class="event-image" src="${escapeHtml(ev.imageUrl)}" alt="イベント画像" loading="lazy">`
-      : "";
+    const imageTop = renderEventImageBlock(ev.imageUrl);
 
     const participantsHtml = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
@@ -477,7 +480,6 @@ function initJoinPage(deviceId) {
   const list = document.getElementById("joinList");
   const empty = document.getElementById("emptyJoin");
 
-  // リアルタイム購読
   roomRef.onSnapshot((snap) => {
     const data = snap.data() || {};
     const events = Array.isArray(data.events) ? data.events : [];
@@ -491,7 +493,6 @@ function initJoinPage(deviceId) {
     renderJoinList(list, events, deviceId);
   });
 
-  // 退出/削除（クリック）
   list.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
@@ -526,8 +527,7 @@ function initJoinPage(deviceId) {
 
       const beforeEvents = await getEventsOnce();
       const target = beforeEvents.find(x => x.id === eventId);
-      const imagePath = target?.imagePath || null;
-      const imageSource = target?.imageSource || null;
+      const hadImage = !!(target && target.imageUrl);
 
       await updateEventsRemote((events) => {
         const ev = events.find(x => x.id === eventId);
@@ -538,9 +538,10 @@ function initJoinPage(deviceId) {
         return events.filter(x => x.id !== eventId);
       });
 
-      if (storageEnabled && imageSource === "storage" && imagePath) {
+      if (hadImage && storage) {
         try {
-          await storage.ref().child(imagePath).delete();
+          const ref = imageRefForEvent(eventId);
+          if (ref) await ref.delete();
         } catch (err) {
           console.warn("画像の削除に失敗しました（無視して続行）:", err);
         }
@@ -548,7 +549,6 @@ function initJoinPage(deviceId) {
     }
   });
 
-  // 参加フォーム submit（イベント委任）
   list.addEventListener("submit", async (e) => {
     const form = e.target;
     if (!(form instanceof HTMLFormElement)) return;
@@ -621,74 +621,59 @@ function initCreatePage(deviceId) {
   fillPeopleSelect(minSel, 60);
   fillPeopleSelect(maxSel, 60);
 
-  // 画像 input（ファイル） & preview
+  // 画像 URL / File / preview
+  const urlInput = document.getElementById("eventImageUrl");
   const fileInput = document.getElementById("eventImage");
   const previewWrap = document.getElementById("imagePreviewWrap");
   const previewImg = document.getElementById("imagePreview");
+  const previewHint = document.getElementById("imagePreviewHint");
 
-  // 画像URL input & preview
-  const urlInput = document.getElementById("imageUrl");
-  const urlPreviewWrap = document.getElementById("urlPreviewWrap");
-  const urlPreviewImg = document.getElementById("urlPreviewImg");
+  function showPreview(src, hint) {
+    if (!previewWrap || !previewImg) return;
+    previewImg.src = src || "";
+    previewWrap.hidden = !src;
+    if (previewHint) {
+      previewHint.hidden = !hint;
+    }
+  }
 
-  if (fileInput && previewWrap && previewImg) {
+  // URL入力→プレビュー（失敗するURLもあるので、onerror ではヒントを出すだけ）
+  if (urlInput) {
+    urlInput.addEventListener("input", () => {
+      const u = normalizeUrl(urlInput.value);
+      const v = validateImageUrl(u);
+      if (!u) {
+        showPreview("", false);
+        return;
+      }
+      if (!v.ok) {
+        showPreview("", false);
+        return;
+      }
+      showPreview(u, true);
+    });
+  }
+
+  // ファイル選択→プレビュー
+  if (fileInput) {
     fileInput.addEventListener("change", () => {
       const f = fileInput.files?.[0] || null;
       if (!f) {
-        previewWrap.hidden = true;
-        previewImg.src = "";
+        // URLが入っているならURLプレビュー維持
+        const u = normalizeUrl(urlInput?.value || "");
+        if (u && validateImageUrl(u).ok) showPreview(u, true);
+        else showPreview("", false);
         return;
       }
       const v = validateImageFile(f);
       if (!v.ok) {
         alert(v.reason);
         fileInput.value = "";
-        previewWrap.hidden = true;
-        previewImg.src = "";
         return;
       }
-      previewImg.src = URL.createObjectURL(f);
-      previewWrap.hidden = false;
-
-      // ファイルを選んだらURLは空に（混乱防止）
+      // ファイルが選ばれたらURLは空にしてOK（混乱防止）
       if (urlInput) urlInput.value = "";
-      if (urlPreviewWrap && urlPreviewImg) {
-        urlPreviewWrap.hidden = true;
-        urlPreviewImg.src = "";
-      }
-    });
-  }
-
-  if (urlInput && urlPreviewWrap && urlPreviewImg) {
-    urlInput.addEventListener("input", () => {
-      const v = String(urlInput.value || "").trim();
-      if (!v) {
-        urlPreviewWrap.hidden = true;
-        urlPreviewImg.src = "";
-        return;
-      }
-      const chk = validateImageUrl(v);
-      if (!chk.ok) {
-        urlPreviewWrap.hidden = true;
-        urlPreviewImg.src = "";
-        return;
-      }
-      urlPreviewImg.src = v;
-      urlPreviewWrap.hidden = false;
-
-      // URLを入れたらファイルは解除（混乱防止）
-      if (fileInput) {
-        fileInput.value = "";
-      }
-      if (previewWrap && previewImg) {
-        previewWrap.hidden = true;
-        previewImg.src = "";
-      }
-    });
-
-    urlPreviewImg.addEventListener("error", () => {
-      urlPreviewWrap.hidden = true;
-      urlPreviewImg.src = "";
+      showPreview(URL.createObjectURL(f), false);
     });
   }
 
@@ -749,63 +734,50 @@ function initCreatePage(deviceId) {
       // イベントIDを先に確定（画像パスに使う）
       const eventId = uid();
 
-      // 画像（任意）
-      // 1) まずURL入力があるなら使う（無料で確実）
-      let imageUrl = "";
-      let imageSource = null; // "url" | "storage" | null
-      let imagePath = null;
+      // 画像URL（任意）
+      const rawUrl = normalizeUrl(urlInput?.value || "");
+      const urlV = validateImageUrl(rawUrl);
+      if (!urlV.ok) { msg.textContent = urlV.reason; return; }
 
-      const inputUrl = String((urlInput?.value || "")).trim();
-      if (inputUrl) {
-        const v = validateImageUrl(inputUrl);
-        if (!v.ok) { msg.textContent = v.reason; return; }
-        imageUrl = inputUrl;
-        imageSource = "url";
-        imagePath = null;
-      }
-
-      // 2) URLが無くて、ファイルがある場合は Storage を試す（使えるときだけ）
+      // 画像ファイル（任意）
       const file = fileInput?.files?.[0] || null;
-      if (!imageUrl && file) {
-        const v = validateImageFile(file);
-        if (!v.ok) { msg.textContent = v.reason; return; }
+      const fileV = validateImageFile(file);
+      if (!fileV.ok) { msg.textContent = fileV.reason; return; }
 
-        if (storageEnabled) {
-          msg.textContent = "画像をアップロード中…（0%）";
-          const ref = imageRefForEvent(eventId);
-          const uploadTask = ref.put(file, { contentType: file.type });
+      // 優先順位：ファイル > URL
+      let imageUrl = rawUrl ? rawUrl : null;
 
-          try {
-            await new Promise((resolve, reject) => {
-              uploadTask.on(
-                "state_changed",
-                (snapshot) => {
-                  const pct = snapshot.totalBytes
-                    ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-                    : 0;
-                  msg.textContent = `画像をアップロード中…（${pct}%）`;
-                },
-                (err) => reject(err),
-                () => resolve()
-              );
-            });
-
-            imageUrl = await ref.getDownloadURL();
-            imageSource = "storage";
-            imagePath = `rooms/${ROOM_ID}/events/${eventId}/image`;
-          } catch (err) {
-            console.warn("画像アップロード失敗。URL方式にフォールバック:", err);
-            // 失敗してもイベント作成自体は続行（画像なし）
-            imageUrl = "";
-            imageSource = null;
-            imagePath = null;
-            msg.textContent =
-              "画像アップロードに失敗しました（Storageが使えない/権限/AppCheckの可能性）。画像なしで作成します。";
-          }
-        } else {
-          msg.textContent =
-            "このプロジェクトでは画像アップロード（Storage）が使えません。画像URLを貼る方式でお願いします。画像なしで作成します。";
+      // ファイルがある場合、Storageにアップロード（Storageが使えるときだけ）
+      if (file) {
+        if (!storage) {
+          msg.textContent = "この環境ではStorageが使えないため、画像ファイルのアップロードはできません。画像URLを貼り付けてください。";
+          return;
         }
+
+        const ref = imageRefForEvent(eventId);
+        if (!ref) {
+          msg.textContent = "Storage参照の作成に失敗しました。画像URLを貼り付けてください。";
+          return;
+        }
+
+        msg.textContent = "画像をアップロード中…（0%）";
+        const uploadTask = ref.put(file, { contentType: file.type });
+
+        await new Promise((resolve, reject) => {
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              const pct = snapshot.totalBytes
+                ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+                : 0;
+              msg.textContent = `画像をアップロード中…（${pct}%）`;
+            },
+            (err) => reject(err),
+            () => resolve()
+          );
+        });
+
+        imageUrl = await ref.getDownloadURL();
       }
 
       const ev = {
@@ -817,9 +789,7 @@ function initCreatePage(deviceId) {
         deadlineISO,
         minPeople,
         maxPeople,
-        imageUrl: imageUrl || null,      // 表示用URL
-        imageSource: imageSource || null, // "url" or "storage"
-        imagePath: imagePath || null,    // storage削除用（storageのときだけ）
+        imageUrl, // ★URL or Storage downloadURL
         creator,
         creatorDeviceId: deviceId,
         participants: [creator],
@@ -834,6 +804,7 @@ function initCreatePage(deviceId) {
 
       msg.textContent = "作成しました！募集中イベント一覧に移動します。";
       setTimeout(() => { window.location.href = "events.html"; }, 200);
+
     } catch (err) {
       console.error(err);
       const code = err?.code ? `（${err.code}）` : "";
