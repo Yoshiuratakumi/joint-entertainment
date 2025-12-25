@@ -6,6 +6,7 @@
   <title>イベントを作成｜京大×慶應ジョイント</title>
   <meta name="description" content="企画を作成してイベント一覧に追加します。" />
   <link rel="stylesheet" href="style.css" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="app.js" defer></script>
@@ -106,6 +107,23 @@
           </fieldset>
 
           <fieldset class="fieldset">
+            <legend>イメージ写真（任意）</legend>
+            <div class="field">
+              <label for="eventImage">画像をアップロード（JPEG / PNG、10MBまで）</label>
+              <input
+                id="eventImage"
+                name="eventImage"
+                type="file"
+                accept="image/jpeg,image/png"
+              />
+              <p class="hint">※任意。対応形式：JPEG / PNG。最大10MB。</p>
+              <div id="imagePreviewWrap" class="image-preview" hidden>
+                <img id="imagePreview" alt="アップロード画像のプレビュー" />
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
             <legend>あなたの情報（作成者）</legend>
 
             <div class="grid2">
@@ -180,5 +198,6 @@
   </script>
 </body>
 </html>
+
 
 
