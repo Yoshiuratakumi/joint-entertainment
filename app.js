@@ -11,7 +11,7 @@ const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBBMdc9G-4QxkWr99o0yy29Xu5F-XCWP4U",
   authDomain: "kyodai-keio-joint-2026.firebaseapp.com",
   projectId: "kyodai-keio-joint-2026",
-  storageBucket: "kyodai-keio-joint-2026.firebasestorage.app",
+  storageBucket: "kyodai-keio-joint-2026.appspot.com",
   messagingSenderId: "44729432402",
   appId: "1:44729432402:web:f6fe7821d1b0b473f6228b",
   measurementId: "G-D6TBZKYLHR"
@@ -754,4 +754,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
 
