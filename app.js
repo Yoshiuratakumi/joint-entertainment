@@ -367,7 +367,9 @@ function renderJoinList(container, events, deviceId) {
         : "募集：未設定";
     const statusBadge = locked ? `<span class="badge locked">締切済み</span>` : `<span class="badge">募集中</span>`;
 
-    const imageTop = renderEventImageBlock(ev.imageUrl);
+    const imageTop = ev.imageUrl
+      ? `<img class="event-image" src="${escapeHtml(ev.imageUrl)}" alt="イベント画像" loading="lazy">`
+      : "";
 
     const participantsHtml = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
@@ -378,9 +380,19 @@ function renderJoinList(container, events, deviceId) {
       return `<li>${escapeHtml(label)}</li>`;
     }).join("");
 
+    // ★追加：この端末がすでに参加済みか？
+    const alreadyJoinedByThisDevice = (ev.participants || []).some(p => p.deviceId === deviceId);
+
     const atCap = (typeof ev.maxPeople === "number") && ((ev.participants || []).length >= ev.maxPeople);
-    const joinDisabled = locked || atCap;
-    const reason = locked ? "締切済みのため参加できません。" : (atCap ? "募集人数に達しています。" : "");
+
+    // ★変更：参加済み端末なら joinDisabled
+    const joinDisabled = locked || atCap || alreadyJoinedByThisDevice;
+
+    const reason =
+      locked ? "締切済みのため参加できません。"
+      : atCap ? "募集人数に達しています。"
+      : alreadyJoinedByThisDevice ? "この端末はすでに参加済みです（1イベントにつき1回まで）。"
+      : "";
 
     const canDelete = (ev.creatorDeviceId === deviceId);
     const deleteBtn = canDelete
@@ -475,6 +487,7 @@ function renderJoinList(container, events, deviceId) {
     });
   });
 }
+
 
 function initJoinPage(deviceId) {
   const list = document.getElementById("joinList");
@@ -575,27 +588,35 @@ function initJoinPage(deviceId) {
       return;
     }
 
-    await updateEventsRemote((events) => {
-      const ev = events.find(x => x.id === evId);
-      if (!ev) { if (msg) msg.textContent = "イベントが見つかりませんでした。"; return events; }
-      if (isLocked(ev)) { if (msg) msg.textContent = "締め切り後のため参加できません。"; return events; }
+await updateEventsRemote((events) => {
+  const ev = events.find(x => x.id === evId);
+  if (!ev) { if (msg) msg.textContent = "イベントが見つかりませんでした。"; return events; }
+  if (isLocked(ev)) { if (msg) msg.textContent = "締め切り後のため参加できません。"; return events; }
 
-      ev.participants = ev.participants || [];
+  ev.participants = ev.participants || [];
 
-      const dup = ev.participants.some(p =>
-        p.name === person.name && p.univ === person.univ && p.grade === person.grade && p.part === person.part
-      );
-      if (dup) { if (msg) msg.textContent = "すでに同じ情報で参加済みです。"; return events; }
+  // ★追加：同じ端末は1イベントに1回まで
+  const already = ev.participants.some(p => p.deviceId === deviceId);
+  if (already) {
+    if (msg) msg.textContent = "この端末はすでに参加済みです（1イベントにつき1回まで）。";
+    return events;
+  }
 
-      if (typeof ev.maxPeople === "number" && ev.participants.length >= ev.maxPeople) {
-        if (msg) msg.textContent = "募集人数に達しています。";
-        return events;
-      }
+  // 既存の「同じ情報で参加済み」チェック（あってもOK）
+  const dup = ev.participants.some(p =>
+    p.name === person.name && p.univ === person.univ && p.grade === person.grade && p.part === person.part
+  );
+  if (dup) { if (msg) msg.textContent = "すでに同じ情報で参加済みです。"; return events; }
 
-      ev.participants.push(person);
-      if (msg) msg.textContent = "参加しました！";
-      return events;
-    });
+  if (typeof ev.maxPeople === "number" && ev.participants.length >= ev.maxPeople) {
+    if (msg) msg.textContent = "募集人数に達しています。";
+    return events;
+  }
+
+  ev.participants.push(person);
+  if (msg) msg.textContent = "参加しました！";
+  return events;
+});
 
     form.reset();
   });
@@ -835,3 +856,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
