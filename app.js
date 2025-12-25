@@ -681,11 +681,23 @@ function initCreatePage(deviceId) {
       if (file) {
         const v = validateImageFile(file);
         if (!v.ok) { msg.textContent = v.reason; return; }
-
-        msg.textContent = "画像をアップロード中…";
-        const ref = imageRefForEvent(eventId);
-        await ref.put(file, { contentType: file.type });
-        imageUrl = await ref.getDownloadURL();
+         msg.textContent = "画像をアップロード中…（0%）";
+         const ref = imageRefForEvent(eventId);
+         const uploadTask = ref.put(file, { contentType: file.type });
+         await new Promise((resolve, reject) => {
+           uploadTask.on(
+             "state_changed",
+             (snapshot) => {
+               const pct = snapshot.totalBytes
+                 ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+                 : 0;
+               msg.textContent = `画像をアップロード中…（${pct}%）`;
+             },
+             (err) => reject(err),
+             () => resolve()
+           );
+         });
+         imageUrl = await ref.getDownloadURL();
       }
 
       const ev = {
@@ -712,10 +724,12 @@ function initCreatePage(deviceId) {
 
       msg.textContent = "作成しました！募集中イベント一覧に移動します。";
       setTimeout(() => { window.location.href = "events.html"; }, 200);
-    } catch (err) {
-      console.error(err);
-      msg.textContent = "保存に失敗しました。Firestore/Storageのルール、SDK読み込み、Consoleエラーを確認してください。";
-    }
+      } catch (err) {
+        console.error(err);
+        const code = err?.code ? `（${err.code}）` : "";
+        const message = err?.message ? err.message : "不明なエラー";
+        msg.textContent = `保存に失敗しました${code}：${message}`;
+      }
   });
 }
 
@@ -740,3 +754,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
