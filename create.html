@@ -109,24 +109,37 @@
 
           <fieldset class="fieldset">
             <legend>イメージ写真（任意）</legend>
-
-            <div class="field">
-              <label for="imageUrl">画像URL</label>
-              <input
-                id="imageUrl"
-                name="imageUrl"
-                type="url"
-                placeholder="例：https://example.com/photo.jpg"
-                inputmode="url"
-                autocomplete="off"
-              />
-              <p class="hint">※URLは <strong>.jpg/.jpeg/.png</strong> の直リンク推奨。URLを入れると下にプレビューが出ます。（無料版ではファイルのアップロード形式はできませんでしたm(__)m）</p>
-
-              <div id="urlPreviewWrap" class="image-preview" hidden>
-                <img id="urlPreviewImg" alt="画像URLプレビュー" />
+          
+            <div class="grid2">
+              <div class="field">
+                <label for="eventImageUrl">画像URL（推奨：共有リンクでもOK）</label>
+                <input
+                  id="eventImageUrl"
+                  name="eventImageUrl"
+                  type="url"
+                  placeholder="例：https://...（iCloud/Googleフォトの共有リンクでもOK）"
+                />
+                <p class="hint">※任意。http/https のURLならOKです（拡張子 .jpg/.png で終わらなくても可）。</p>
+              </div>
+          
+              <div class="field">
+                <label for="eventImage">または画像ファイルをアップロード（JPEG/PNG、10MBまで）</label>
+                <input
+                  id="eventImage"
+                  name="eventImage"
+                  type="file"
+                  accept="image/jpeg,image/png"
+                />
+                <p class="hint">※任意。Storageが有効な場合のみアップロードできます（課金が必要なことがあります）。</p>
               </div>
             </div>
-
+          
+            <div id="imagePreviewWrap" class="image-preview" hidden>
+              <img id="imagePreview" alt="アップロード画像のプレビュー" />
+              <p id="imagePreviewHint" class="hint" style="margin-top:8px" hidden>
+                ※このURLは画像として埋め込めない形式かもしれません（その場合はリンクとして表示されます）。
+              </p>
+            </div>
           </fieldset>
 
           <fieldset class="fieldset">
@@ -207,6 +220,7 @@
   </script>
 </body>
 </html>
+
 
 
 
