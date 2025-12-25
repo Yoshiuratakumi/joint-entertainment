@@ -1,8 +1,9 @@
 /* =========================
-   京大×慶應 交流マッチング（Firestore同期版）
+   京大×慶應 交流マッチング（Firestore同期 + 画像アップロード版）
    - イベント作成/参加/退出/削除
    - 締め切り後は参加/退出ロック
    - 別端末でも同じ一覧に即時反映（onSnapshot）
+   - 画像（任意）：JPEG/PNG 10MBまで → Firebase Storageに保存 → URLをイベントに保存
    ========================= */
 
 // ===== Firebase config（あなたの値）=====
@@ -118,9 +119,20 @@ function fillPeopleSelect(sel, maxN = 60) {
   }
 }
 
-// ===== Firestore（compat）=====
+/* ===== 画像アップロード（任意） ===== */
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+function validateImageFile(file) {
+  if (!file) return { ok: true, reason: "" };
+  const okType = (file.type === "image/jpeg" || file.type === "image/png");
+  if (!okType) return { ok: false, reason: "画像は JPEG または PNG のみ対応です。" };
+  if (file.size > IMAGE_MAX_BYTES) return { ok: false, reason: "画像は 10MB 以内にしてください。" };
+  return { ok: true, reason: "" };
+}
+
+/* ===== Firestore / Storage（compat） ===== */
 let db = null;
 let roomRef = null;
+let storage = null;
 
 function initFirebase() {
   if (!window.firebase) {
@@ -128,7 +140,13 @@ function initFirebase() {
   }
   if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
+  storage = firebase.storage();
   roomRef = db.collection("rooms").doc(ROOM_ID);
+}
+
+function imageRefForEvent(eventId) {
+  // 固定パスにしておくと、削除が簡単
+  return storage.ref().child(`rooms/${ROOM_ID}/events/${eventId}/image`);
 }
 
 // 初回: roomドキュメントが無ければ作る
@@ -137,13 +155,6 @@ async function ensureRoomDoc() {
   if (!snap.exists) {
     await roomRef.set({ events: [], updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
   }
-}
-
-async function loadEventsRemote() {
-  const snap = await roomRef.get();
-  if (!snap.exists) return [];
-  const data = snap.data() || {};
-  return Array.isArray(data.events) ? data.events : [];
 }
 
 // 競合に強い保存（transaction）
@@ -161,7 +172,14 @@ async function updateEventsRemote(mutatorFn) {
   });
 }
 
-// ===== events.html 表示 =====
+// いまのイベント一覧を1回だけ取得（削除時に画像URLを取る用途）
+async function getEventsOnce() {
+  const snap = await roomRef.get();
+  const data = snap.exists ? (snap.data() || {}) : {};
+  return Array.isArray(data.events) ? data.events : [];
+}
+
+/* ===== events.html 表示 ===== */
 function renderEventsList(container, events, deviceId) {
   container.innerHTML = "";
   const sorted = [...events].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
@@ -180,6 +198,10 @@ function renderEventsList(container, events, deviceId) {
 
     const creator = `${ev.creator.name}（${ev.creator.univ}・${ev.creator.grade}年・${ev.creator.part}）`;
 
+    const imageTop = ev.imageUrl
+      ? `<img class="event-image" src="${escapeHtml(ev.imageUrl)}" alt="イベント画像" loading="lazy">`
+      : "";
+
     const peopleItems = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
       const canRemove = (!locked) && (p.deviceId === deviceId);
@@ -196,6 +218,7 @@ function renderEventsList(container, events, deviceId) {
 
     container.insertAdjacentHTML("beforeend", `
       <article class="card">
+        ${imageTop}
         <div class="card-head">
           <h3 class="card-title">${escapeHtml(ev.title)}</h3>
           ${statusBadge}
@@ -271,6 +294,11 @@ function initEventsPage(deviceId) {
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
 
+      // 先に画像URLの有無を取っておく（削除後は探しにくいので）
+      const beforeEvents = await getEventsOnce();
+      const target = beforeEvents.find(x => x.id === eventId);
+      const hadImage = !!(target && target.imageUrl);
+
       await updateEventsRemote((events) => {
         const ev = events.find(x => x.id === eventId);
         if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
@@ -279,11 +307,20 @@ function initEventsPage(deviceId) {
         alert("イベントを削除しました。");
         return events.filter(x => x.id !== eventId);
       });
+
+      // Storage上の画像も削除（失敗してもイベント削除は維持）
+      if (hadImage) {
+        try {
+          await imageRefForEvent(eventId).delete();
+        } catch (err) {
+          console.warn("画像の削除に失敗しました（無視して続行）:", err);
+        }
+      }
     }
   });
 }
 
-// ===== join.html 表示 =====
+/* ===== join.html 表示 ===== */
 function renderJoinList(container, events, deviceId) {
   container.innerHTML = "";
   const sorted = [...events].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
@@ -296,6 +333,10 @@ function renderJoinList(container, events, deviceId) {
         ? `募集：${ev.minPeople ?? "?"}〜${ev.maxPeople ?? "?"}人`
         : "募集：未設定";
     const statusBadge = locked ? `<span class="badge locked">締切済み</span>` : `<span class="badge">募集中</span>`;
+
+    const imageTop = ev.imageUrl
+      ? `<img class="event-image" src="${escapeHtml(ev.imageUrl)}" alt="イベント画像" loading="lazy">`
+      : "";
 
     const participantsHtml = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
@@ -327,6 +368,7 @@ function renderJoinList(container, events, deviceId) {
       </button>
 
       <div class="acc-body">
+        ${imageTop}
         <p class="card-detail">${escapeHtml(ev.detail || "（詳細なし）")}</p>
 
         <div class="people">
@@ -421,7 +463,7 @@ function initJoinPage(deviceId) {
     renderJoinList(list, events, deviceId);
   });
 
-  // 退出/削除/参加
+  // 退出/削除（クリック）
   list.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
@@ -454,6 +496,10 @@ function initJoinPage(deviceId) {
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
 
+      const beforeEvents = await getEventsOnce();
+      const target = beforeEvents.find(x => x.id === eventId);
+      const hadImage = !!(target && target.imageUrl);
+
       await updateEventsRemote((events) => {
         const ev = events.find(x => x.id === eventId);
         if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
@@ -462,6 +508,14 @@ function initJoinPage(deviceId) {
         alert("イベントを削除しました。");
         return events.filter(x => x.id !== eventId);
       });
+
+      if (hadImage) {
+        try {
+          await imageRefForEvent(eventId).delete();
+        } catch (err) {
+          console.warn("画像の削除に失敗しました（無視して続行）:", err);
+        }
+      }
     }
   });
 
@@ -518,7 +572,7 @@ function initJoinPage(deviceId) {
   });
 }
 
-// ===== create.html =====
+/* ===== create.html ===== */
 function initCreatePage(deviceId) {
   const form = document.getElementById("createForm");
   const msg = document.getElementById("formMsg");
@@ -537,6 +591,32 @@ function initCreatePage(deviceId) {
   const maxSel = document.getElementById("maxPeople");
   fillPeopleSelect(minSel, 60);
   fillPeopleSelect(maxSel, 60);
+
+  // 画像 input & preview（create.html に追加済み想定）
+  const fileInput = document.getElementById("eventImage");
+  const previewWrap = document.getElementById("imagePreviewWrap");
+  const previewImg = document.getElementById("imagePreview");
+
+  if (fileInput && previewWrap && previewImg) {
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files?.[0] || null;
+      if (!f) {
+        previewWrap.hidden = true;
+        previewImg.src = "";
+        return;
+      }
+      const v = validateImageFile(f);
+      if (!v.ok) {
+        alert(v.reason);
+        fileInput.value = "";
+        previewWrap.hidden = true;
+        previewImg.src = "";
+        return;
+      }
+      previewImg.src = URL.createObjectURL(f);
+      previewWrap.hidden = false;
+    });
+  }
 
   if (detail && detailCount) {
     detail.addEventListener("input", () => {
@@ -592,8 +672,24 @@ function initCreatePage(deviceId) {
       if (maxPeople !== null && (!Number.isFinite(maxPeople) || maxPeople < 1)) { msg.textContent = "募集人数（最大）が不正です。"; return; }
       if (minPeople !== null && maxPeople !== null && minPeople > maxPeople) { msg.textContent = "募集人数は「最小 ≤ 最大」にしてください。"; return; }
 
+      // イベントIDを先に確定（画像パスに使う）
+      const eventId = uid();
+
+      // 画像（任意）を Storage にアップロードしてURL取得
+      let imageUrl = null;
+      const file = fileInput?.files?.[0] || null;
+      if (file) {
+        const v = validateImageFile(file);
+        if (!v.ok) { msg.textContent = v.reason; return; }
+
+        msg.textContent = "画像をアップロード中…";
+        const ref = imageRefForEvent(eventId);
+        await ref.put(file, { contentType: file.type });
+        imageUrl = await ref.getDownloadURL();
+      }
+
       const ev = {
-        id: uid(),
+        id: eventId,
         title,
         detail: detailText,
         startISO,
@@ -601,12 +697,14 @@ function initCreatePage(deviceId) {
         deadlineISO,
         minPeople,
         maxPeople,
+        imageUrl, // ★追加
         creator,
         creatorDeviceId: deviceId,
         participants: [creator],
         createdAtISO: new Date().toISOString(),
       };
 
+      msg.textContent = "保存中…";
       await updateEventsRemote((events) => {
         events.push(ev);
         return events;
@@ -616,7 +714,7 @@ function initCreatePage(deviceId) {
       setTimeout(() => { window.location.href = "events.html"; }, 200);
     } catch (err) {
       console.error(err);
-      msg.textContent = "保存に失敗しました。Firestoreルール/SDK読み込み/Consoleエラーを確認してください。";
+      msg.textContent = "保存に失敗しました。Firestore/Storageのルール、SDK読み込み、Consoleエラーを確認してください。";
     }
   });
 }
@@ -631,8 +729,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     await ensureRoomDoc();
   } catch (e) {
     console.error(e);
-    // 画面に出せる場合はメッセージ表示
-    const el = document.getElementById("formMsg") || document.getElementById("emptyState") || document.getElementById("emptyJoin");
+    const el = document.getElementById("formMsg")
+      || document.getElementById("emptyState")
+      || document.getElementById("emptyJoin");
     if (el) el.textContent = "Firebaseの読み込みに失敗しました。HTMLの<head>にFirebase scriptを追加してください。";
     return;
   }
