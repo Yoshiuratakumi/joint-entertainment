@@ -458,6 +458,7 @@ function renderJoinList(container, events, deviceId) {
                 <option value="Vn">Vn</option>
                 <option value="Va">Va</option>
                 <option value="Vc">Vc</option>
+                <option value="Cb">Cb</option>
                 <option value="Ob">Ob</option>
                 <option value="Cl">Cl</option>
                 <option value="Fl">Fl</option>
@@ -465,7 +466,9 @@ function renderJoinList(container, events, deviceId) {
                 <option value="Tp">Tp</option>
                 <option value="Trb">Trb</option>
                 <option value="Hr">Hr</option>
-                <option value="その他">その他</option>
+                <option value="Tuba">Tuba</option>
+                <option value="Harp">Harp</option>
+                <option value="Perc">Perc</option>
               </select>
             </div>
           </div>
@@ -896,5 +899,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
 
 
