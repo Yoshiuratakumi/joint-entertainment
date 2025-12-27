@@ -25,6 +25,9 @@ const ROOM_ID = "main";
 // 1端末あたり作成できるイベント上限
 const MAX_EVENTS_PER_DEVICE = 5;
 
+// 参加：コメント最大文字数
+const JOIN_COMMENT_MAXLEN = 50;
+
 // ===== local device id（退出/削除権限に使用）=====
 const DEVICE_KEY = "joint_device_id_v1";
 function getDeviceId() {
@@ -124,6 +127,29 @@ function fillPeopleSelect(sel, maxN = 60) {
   }
 }
 
+/* ===== 参加者プロフィール（任意情報） ===== */
+function sanitizeJoinLineName(s) {
+  const v = String(s || "").trim();
+  if (!v) return "";
+  // 余計な改行を消す程度
+  return v.replace(/\s+/g, " ").slice(0, 50); // 長すぎ防止（50文字に丸め）
+}
+function sanitizeJoinComment(s) {
+  const v = String(s || "").trim();
+  if (!v) return "";
+  // 改行をスペースに
+  const oneLine = v.replace(/\s*\n\s*/g, " ").replace(/\s+/g, " ");
+  return oneLine.slice(0, JOIN_COMMENT_MAXLEN);
+}
+function renderParticipantSubinfo(p) {
+  const line = (p && p.line) ? String(p.line).trim() : "";
+  const comment = (p && p.comment) ? String(p.comment).trim() : "";
+  if (!line && !comment) return "";
+  const lineHtml = line ? `<span class="p-sub-line">LINE：${escapeHtml(line)}</span>` : "";
+  const cHtml = comment ? `<span class="p-sub-comment">${escapeHtml(comment)}</span>` : "";
+  return `<div class="p-sub">${lineHtml}${(line && comment) ? "　" : ""}${cHtml}</div>`;
+}
+
 /* ===== 画像：URL / ファイル 共通バリデーション ===== */
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
@@ -141,7 +167,6 @@ function validateImageUrl(url) {
   if (!u) return { ok: true, reason: "" };
   if (u.length > 2000) return { ok: false, reason: "画像URLが長すぎます（2000文字以内にしてください）。" };
   if (!/^https?:\/\//i.test(u)) return { ok: false, reason: "画像URLは http または https で始まるURLにしてください。" };
-  // 念のため危険なスキーム拒否
   if (/^javascript:/i.test(u)) return { ok: false, reason: "そのURL形式は使用できません。" };
   return { ok: true, reason: "" };
 }
@@ -208,7 +233,6 @@ async function getEventsOnce() {
 function renderEventImageBlock(imageUrl) {
   if (!imageUrl) return "";
   const u = escapeHtml(imageUrl);
-  // onerror で画像を非表示にしてリンクを表示
   return `
     <div class="event-image-wrap">
       <img class="event-image" src="${u}" alt="イベント画像" loading="lazy"
@@ -242,11 +266,26 @@ function renderEventsList(container, events, deviceId) {
 
     const peopleItems = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
+      const sub = renderParticipantSubinfo(p);
       const canRemove = (!locked) && (p.deviceId === deviceId);
+
+      // ✅「押せる行」でも下にサブ情報を出す
       if (canRemove) {
-        return `<li><button class="name-btn" data-action="leave" data-event-id="${escapeHtml(ev.id)}" data-person-id="${escapeHtml(p.id)}" type="button">${escapeHtml(label)}</button></li>`;
+        return `
+          <li class="p-item">
+            <button class="name-btn" data-action="leave" data-event-id="${escapeHtml(ev.id)}" data-person-id="${escapeHtml(p.id)}" type="button">
+              ${escapeHtml(label)}
+            </button>
+            ${sub}
+          </li>
+        `;
       }
-      return `<li>${escapeHtml(label)}</li>`;
+      return `
+        <li class="p-item">
+          <div class="p-main">${escapeHtml(label)}</div>
+          ${sub}
+        </li>
+      `;
     }).join("");
 
     const canDelete = (ev.creatorDeviceId === deviceId);
@@ -343,7 +382,6 @@ function initEventsPage(deviceId) {
         return events.filter(x => x.id !== eventId);
       });
 
-      // Storage画像を消せるのは storage が使える場合だけ
       if (hadImage && storage) {
         try {
           const ref = imageRefForEvent(eventId);
@@ -376,19 +414,32 @@ function renderJoinList(container, events, deviceId) {
 
     const participantsHtml = (ev.participants || []).map(p => {
       const label = `${p.name}（${p.univ}・${p.grade}年・${p.part}）`;
+      const sub = renderParticipantSubinfo(p);
       const canRemove = (!locked) && (p.deviceId === deviceId);
+
       if (canRemove) {
-        return `<li><button class="name-btn" data-action="leave" data-event-id="${escapeHtml(ev.id)}" data-person-id="${escapeHtml(p.id)}" type="button">${escapeHtml(label)}</button></li>`;
+        return `
+          <li class="p-item">
+            <button class="name-btn" data-action="leave" data-event-id="${escapeHtml(ev.id)}" data-person-id="${escapeHtml(p.id)}" type="button">
+              ${escapeHtml(label)}
+            </button>
+            ${sub}
+          </li>
+        `;
       }
-      return `<li>${escapeHtml(label)}</li>`;
+      return `
+        <li class="p-item">
+          <div class="p-main">${escapeHtml(label)}</div>
+          ${sub}
+        </li>
+      `;
     }).join("");
 
-    // ★追加：この端末がすでに参加済みか？
+    // ★この端末がすでに参加済みか？
     const alreadyJoinedByThisDevice = (ev.participants || []).some(p => p.deviceId === deviceId);
 
     const atCap = (typeof ev.maxPeople === "number") && ((ev.participants || []).length >= ev.maxPeople);
 
-    // ★変更：参加済み端末なら joinDisabled
     const joinDisabled = locked || atCap || alreadyJoinedByThisDevice;
 
     const reason =
@@ -469,7 +520,22 @@ function renderJoinList(container, events, deviceId) {
                 <option value="Tuba">Tuba</option>
                 <option value="Harp">Harp</option>
                 <option value="Perc">Perc</option>
+                <option value="その他">その他</option>
               </select>
+            </div>
+          </div>
+
+          <!-- ★追加：任意入力2つ -->
+          <div class="grid2">
+            <div class="field">
+              <label>LINEアカウント名（任意）</label>
+              <input name="line" type="text" maxlength="50" placeholder="例：yamada_music" ${joinDisabled ? "disabled" : ""}/>
+              <p class="hint">※任意（50文字以内）</p>
+            </div>
+            <div class="field">
+              <label>一言コメント（任意・50文字以内）</label>
+              <input name="comment" type="text" maxlength="${JOIN_COMMENT_MAXLEN}" placeholder="例：当日よろしくお願いします！" ${joinDisabled ? "disabled" : ""}/>
+              <p class="hint">※任意（${JOIN_COMMENT_MAXLEN}文字以内）</p>
             </div>
           </div>
 
@@ -494,7 +560,6 @@ function renderJoinList(container, events, deviceId) {
   });
 }
 
-
 function initJoinPage(deviceId) {
   const list = document.getElementById("joinList");
   const empty = document.getElementById("emptyJoin");
@@ -512,6 +577,7 @@ function initJoinPage(deviceId) {
     renderJoinList(list, events, deviceId);
   });
 
+  // 退出 / 削除
   list.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
@@ -568,6 +634,7 @@ function initJoinPage(deviceId) {
     }
   });
 
+  // 参加フォーム submit
   list.addEventListener("submit", async (e) => {
     const form = e.target;
     if (!(form instanceof HTMLFormElement)) return;
@@ -586,6 +653,8 @@ function initJoinPage(deviceId) {
       univ: fd.get("univ"),
       grade: fd.get("grade"),
       part: fd.get("part"),
+      line: sanitizeJoinLineName(fd.get("line")),           // ★追加（任意）
+      comment: sanitizeJoinComment(fd.get("comment")),      // ★追加（任意・50字）
       deviceId,
     };
 
@@ -593,36 +662,39 @@ function initJoinPage(deviceId) {
       if (msg) msg.textContent = "未入力の項目があります。すべて入力してください。";
       return;
     }
+    if (person.comment && person.comment.length > JOIN_COMMENT_MAXLEN) {
+      if (msg) msg.textContent = `一言コメントは${JOIN_COMMENT_MAXLEN}文字以内にしてください。`;
+      return;
+    }
 
-await updateEventsRemote((events) => {
-  const ev = events.find(x => x.id === evId);
-  if (!ev) { if (msg) msg.textContent = "イベントが見つかりませんでした。"; return events; }
-  if (isLocked(ev)) { if (msg) msg.textContent = "締め切り後のため参加できません。"; return events; }
+    await updateEventsRemote((events) => {
+      const ev = events.find(x => x.id === evId);
+      if (!ev) { if (msg) msg.textContent = "イベントが見つかりませんでした。"; return events; }
+      if (isLocked(ev)) { if (msg) msg.textContent = "締め切り後のため参加できません。"; return events; }
 
-  ev.participants = ev.participants || [];
+      ev.participants = ev.participants || [];
 
-  // ★追加：同じ端末は1イベントに1回まで
-  const already = ev.participants.some(p => p.deviceId === deviceId);
-  if (already) {
-    if (msg) msg.textContent = "この端末はすでに参加済みです（1イベントにつき1回まで）。";
-    return events;
-  }
+      // 同じ端末は1イベントに1回まで
+      const already = ev.participants.some(p => p.deviceId === deviceId);
+      if (already) {
+        if (msg) msg.textContent = "この端末はすでに参加済みです（1イベントにつき1回まで）。";
+        return events;
+      }
 
-  // 既存の「同じ情報で参加済み」チェック（あってもOK）
-  const dup = ev.participants.some(p =>
-    p.name === person.name && p.univ === person.univ && p.grade === person.grade && p.part === person.part
-  );
-  if (dup) { if (msg) msg.textContent = "すでに同じ情報で参加済みです。"; return events; }
+      const dup = ev.participants.some(p =>
+        p.name === person.name && p.univ === person.univ && p.grade === person.grade && p.part === person.part
+      );
+      if (dup) { if (msg) msg.textContent = "すでに同じ情報で参加済みです。"; return events; }
 
-  if (typeof ev.maxPeople === "number" && ev.participants.length >= ev.maxPeople) {
-    if (msg) msg.textContent = "募集人数に達しています。";
-    return events;
-  }
+      if (typeof ev.maxPeople === "number" && ev.participants.length >= ev.maxPeople) {
+        if (msg) msg.textContent = "募集人数に達しています。";
+        return events;
+      }
 
-  ev.participants.push(person);
-  if (msg) msg.textContent = "参加しました！";
-  return events;
-});
+      ev.participants.push(person);
+      if (msg) msg.textContent = "参加しました！";
+      return events;
+    });
 
     form.reset();
   });
@@ -633,7 +705,7 @@ function initCreatePage(deviceId) {
   const form = document.getElementById("createForm");
   const msg = document.getElementById("formMsg");
 
-// ★作成数上限チェック（UI側）
+  // 作成数上限チェック（UI側）
   const submitBtn = form.querySelector('button[type="submit"]');
 
   (async () => {
@@ -646,11 +718,9 @@ function initCreatePage(deviceId) {
         msg.textContent = `この端末から作成できるイベントは${MAX_EVENTS_PER_DEVICE}件までです。（現在：${createdCount}件）`;
       }
     } catch (e) {
-      // 取得に失敗してもフォームは使えるようにしておく
       console.warn("作成数チェックに失敗:", e);
     }
   })();
-
 
   const detail = document.getElementById("detail");
   const detailCount = document.getElementById("detailCount");
@@ -683,7 +753,6 @@ function initCreatePage(deviceId) {
     }
   }
 
-  // URL入力→プレビュー（失敗するURLもあるので、onerror ではヒントを出すだけ）
   if (urlInput) {
     urlInput.addEventListener("input", () => {
       const u = normalizeUrl(urlInput.value);
@@ -700,12 +769,10 @@ function initCreatePage(deviceId) {
     });
   }
 
-  // ファイル選択→プレビュー
   if (fileInput) {
     fileInput.addEventListener("change", () => {
       const f = fileInput.files?.[0] || null;
       if (!f) {
-        // URLが入っているならURLプレビュー維持
         const u = normalizeUrl(urlInput?.value || "");
         if (u && validateImageUrl(u).ok) showPreview(u, true);
         else showPreview("", false);
@@ -717,7 +784,6 @@ function initCreatePage(deviceId) {
         fileInput.value = "";
         return;
       }
-      // ファイルが選ばれたらURLは空にしてOK（混乱防止）
       if (urlInput) urlInput.value = "";
       showPreview(URL.createObjectURL(f), false);
     });
@@ -732,6 +798,9 @@ function initCreatePage(deviceId) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     msg.textContent = "";
+
+    // ★catchで参照するので外で宣言
+    let eventId = null;
 
     try {
       const fd = new FormData(form);
@@ -778,7 +847,7 @@ function initCreatePage(deviceId) {
       if (minPeople !== null && maxPeople !== null && minPeople > maxPeople) { msg.textContent = "募集人数は「最小 ≤ 最大」にしてください。"; return; }
 
       // イベントIDを先に確定（画像パスに使う）
-      const eventId = uid();
+      eventId = uid();
 
       // 画像URL（任意）
       const rawUrl = normalizeUrl(urlInput?.value || "");
@@ -793,7 +862,6 @@ function initCreatePage(deviceId) {
       // 優先順位：ファイル > URL
       let imageUrl = rawUrl ? rawUrl : null;
 
-      // ファイルがある場合、Storageにアップロード（Storageが使えるときだけ）
       if (file) {
         if (!storage) {
           msg.textContent = "この環境ではStorageが使えないため、画像ファイルのアップロードはできません。画像URLを貼り付けてください。";
@@ -835,7 +903,7 @@ function initCreatePage(deviceId) {
         deadlineISO,
         minPeople,
         maxPeople,
-        imageUrl, // ★URL or Storage downloadURL
+        imageUrl,
         creator,
         creatorDeviceId: deviceId,
         participants: [creator],
@@ -847,7 +915,6 @@ function initCreatePage(deviceId) {
       await updateEventsRemote((events) => {
         const createdCount = events.filter(x => x.creatorDeviceId === deviceId).length;
         if (createdCount >= MAX_EVENTS_PER_DEVICE) {
-          // transaction を中断させる
           throw new Error(`CREATE_LIMIT_REACHED:${createdCount}`);
         }
         events.push(ev);
@@ -860,12 +927,14 @@ function initCreatePage(deviceId) {
     } catch (err) {
       console.error(err);
 
-      // ★上限で弾かれたのに画像だけ上がってしまった場合は削除
+      // 上限で弾かれたのに画像だけ上がってしまった場合は削除
       try {
         const isLimit = String(err?.message || "").startsWith("CREATE_LIMIT_REACHED");
         if (isLimit) {
-          // eventId は submit 内で作っている前提（あなたのコードの eventId 変数）
-          await imageRefForEvent(eventId).delete().catch(() => {});
+          if (eventId && storage) {
+            const ref = imageRefForEvent(eventId);
+            if (ref) await ref.delete().catch(() => {});
+          }
           msg.textContent = `この端末から作成できるイベントは${MAX_EVENTS_PER_DEVICE}件までです。`;
           return;
         }
@@ -899,6 +968,3 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
-
-
-
