@@ -528,13 +528,13 @@ function renderJoinList(container, events, deviceId) {
           <!-- ★追加：任意入力2つ -->
           <div class="grid2">
             <div class="field">
-              <label>LINEアカウント名（任意）</label>
+              <label>LINEアカウント名</label>
               <input name="line" type="text" maxlength="50" placeholder="例：yamada_music" ${joinDisabled ? "disabled" : ""}/>
-              <p class="hint">※任意（50文字以内）</p>
+              <p class="hint">※任意、名前と違う場合のみ記入</p>
             </div>
             <div class="field">
-              <label>一言コメント（任意・50文字以内）</label>
-              <input name="comment" type="text" maxlength="${JOIN_COMMENT_MAXLEN}" placeholder="例：当日よろしくお願いします！" ${joinDisabled ? "disabled" : ""}/>
+              <label>一言コメント</label>
+              <input name="comment" type="text" maxlength="${JOIN_COMMENT_MAXLEN}" placeholder="例：よろしくお願いします！ / ○○もしたいです / 18:30からなら参加できます！" ${joinDisabled ? "disabled" : ""}/>
               <p class="hint">※任意（${JOIN_COMMENT_MAXLEN}文字以内）</p>
             </div>
           </div>
@@ -968,3 +968,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
