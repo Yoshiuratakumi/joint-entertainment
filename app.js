@@ -492,7 +492,7 @@ function renderJoinList(container, events, deviceId) {
               <input name="name" type="text" required maxlength="30" placeholder="例：山田 太郎" ${joinDisabled ? "disabled" : ""}/>
             </div>
             <div class="field">
-              <label>大学名（京大/慶應）</label>
+              <label>大学名</label>
               <select name="univ" required ${joinDisabled ? "disabled" : ""}>
                 <option value="">選択してください</option>
                 <option value="京大">京大</option>
@@ -531,7 +531,6 @@ function renderJoinList(container, events, deviceId) {
                 <option value="Tuba">Tuba</option>
                 <option value="Harp">Harp</option>
                 <option value="Perc">Perc</option>
-                <option value="その他">その他</option>
               </select>
             </div>
           </div>
@@ -979,6 +978,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
 
 
 
