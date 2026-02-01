@@ -74,14 +74,25 @@ function isLocked(ev) {
 
 /* ===== 日程セレクト（2/18 13:00〜2/22 09:00、30分刻み） ===== */
 function buildTimeOptions() {
-  const start = new Date("2026-02-18T13:00:00");
-  const end = new Date("2026-02-23T09:00:00");
   const stepMin = 30;
+  const stepMs = stepMin * 60 * 1000;
+  // 指定の範囲（開始〜終了）を列挙
+  const ranges = [
+    ["2026-02-18T05:00:00", "2026-02-19T00:00:00"],
+    ["2026-02-19T05:00:00", "2026-02-20T00:00:00"],
+    ["2026-02-20T05:00:00", "2026-02-21T00:00:00"],
+    ["2026-02-21T05:00:00", "2026-02-22T00:00:00"],
+    ["2026-02-22T05:00:00", "2026-02-23T00:00:00"],
+    ["2026-02-23T05:00:00", "2026-02-23T09:00:00"],
+  ];
   const opts = [];
-  let cur = new Date(start);
-  while (cur <= end) {
-    opts.push(new Date(cur));
-    cur = new Date(cur.getTime() + stepMin * 30 * 1000);
+  for (const [startStr, endStr] of ranges) {
+    let cur = new Date(startStr);
+    const end = new Date(endStr);
+    while (cur <= end) {
+      opts.push(new Date(cur)); // 参照が同じにならないようにコピー
+      cur = new Date(cur.getTime() + stepMs);
+    }
   }
   return opts;
 }
@@ -968,5 +979,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
 
 
