@@ -72,16 +72,16 @@ function isLocked(ev) {
   return Date.now() > new Date(ev.deadlineISO).getTime();
 }
 
-/* ===== 日程セレクト（2/18 13:00〜2/22 09:00、1時間刻み） ===== */
+/* ===== 日程セレクト（2/18 13:00〜2/22 09:00、30分刻み） ===== */
 function buildTimeOptions() {
   const start = new Date("2026-02-18T13:00:00");
-  const end = new Date("2026-02-22T09:00:00");
-  const stepMin = 60;
+  const end = new Date("2026-02-23T09:00:00");
+  const stepMin = 30;
   const opts = [];
   let cur = new Date(start);
   while (cur <= end) {
     opts.push(new Date(cur));
-    cur = new Date(cur.getTime() + stepMin * 60 * 1000);
+    cur = new Date(cur.getTime() + stepMin * 30 * 1000);
   }
   return opts;
 }
@@ -968,4 +968,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
+
 
