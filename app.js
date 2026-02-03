@@ -72,6 +72,50 @@ function isLocked(ev) {
   return Date.now() > new Date(ev.deadlineISO).getTime();
 }
 
+
+/* ===== 削除キー（締切後の削除に使用） ===== */
+async function sha256Hex(str) {
+  // modern browsers (Chrome/Edge/Firefox/Safari) support this
+  if (!window.crypto?.subtle) {
+    throw new Error("このブラウザでは削除キーの検証ができません（crypto.subtle 未対応）。");
+  }
+  const data = new TextEncoder().encode(String(str));
+  const hash = await window.crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function sanitizeDeleteKey(s) {
+  const v = String(s || "").trim();
+  // 改行や連続スペースは1つに
+  return v.replace(/\s+/g, " ").slice(0, 32);
+}
+
+/**
+ * そのイベントを削除してよいか判定し、必要なら削除キー入力を促す。
+ * - 作成端末なら常にOK
+ * - それ以外は「締切後」かつ「削除キーが設定済み」の場合に、削除キー一致でOK
+ */
+async function authorizeDeleteEvent(ev, deviceId) {
+  const isCreator = (ev && ev.creatorDeviceId === deviceId);
+  if (isCreator) return { ok: true, byKey: false };
+
+  const locked = isLocked(ev);
+  if (locked && ev && ev.deleteKeyHash) {
+    const key = prompt("削除キーを入力してください（作成時に設定したもの）:");
+    if (key == null) return { ok: false, byKey: true, reason: "cancel" };
+
+    const norm = sanitizeDeleteKey(key);
+    if (!norm) return { ok: false, byKey: true, reason: "empty" };
+
+    const hash = await sha256Hex(norm);
+    if (hash !== ev.deleteKeyHash) return { ok: false, byKey: true, reason: "invalid" };
+
+    return { ok: true, byKey: true };
+  }
+
+  return { ok: false, byKey: false, reason: "not_allowed" };
+}
+
 /* ===== 日程セレクト（2/18 13:00〜2/22 09:00、30分刻み） ===== */
 function buildTimeOptions() {
   const stepMin = 30;
@@ -299,9 +343,10 @@ function renderEventsList(container, events, deviceId) {
       `;
     }).join("");
 
-    const canDelete = (ev.creatorDeviceId === deviceId);
-    const deleteBtn = canDelete
-      ? `<div class="card-actions"><button class="btn small danger-outline" data-action="delete-event" data-event-id="${escapeHtml(ev.id)}" type="button">このイベントを削除</button></div>`
+    const isCreator = (ev.creatorDeviceId === deviceId);
+    const canDeleteByKey = (!isCreator) && locked && !!ev.deleteKeyHash;
+    const deleteBtn = (isCreator || canDeleteByKey)
+      ? `<div class="card-actions"><button class="btn small danger-outline" data-action="delete-event" data-event-id="${escapeHtml(ev.id)}" type="button">${isCreator ? "このイベントを削除" : "削除キーで削除"}</button></div>`
       : "";
 
     container.insertAdjacentHTML("beforeend", `
@@ -380,19 +425,50 @@ function initEventsPage(deviceId) {
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
 
+      // 先に現在のイベント情報を取得（削除権限チェック・画像削除判定に使用）
       const beforeEvents = await getEventsOnce();
       const target = beforeEvents.find(x => x.id === eventId);
-      const hadImage = !!(target && target.imageUrl);
+      if (!target) { alert("イベントが見つかりませんでした。"); return; }
 
-      await updateEventsRemote((events) => {
-        const ev = events.find(x => x.id === eventId);
-        if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
-        if (ev.creatorDeviceId !== deviceId) { alert("作成者（この端末）だけがイベントを削除できます。"); return events; }
+      const hadImage = !!target.imageUrl;
+
+      let allowByKey = false;
+      try {
+        const auth = await authorizeDeleteEvent(target, deviceId);
+        if (!auth.ok) {
+          if (auth.reason === "invalid") alert("削除キーが違います。");
+          else if (auth.reason === "empty") alert("削除キーを入力してください。");
+          else if (auth.reason === "not_allowed") alert("作成者（作成端末）だけが削除できます。締め切り後は、作成時に設定した削除キーがあれば別端末からも削除できます。");
+          // cancel は何もしない
+          return;
+        }
+        allowByKey = !!auth.byKey;
+      } catch (err) {
+        console.error(err);
+        alert("削除キーの検証に失敗しました。ブラウザが古い可能性があります。");
+        return;
+      }
+
+      try {
+        await updateEventsRemote((events) => {
+          const ev = events.find(x => x.id === eventId);
+          if (!ev) return events;
+
+          const ok = (ev.creatorDeviceId === deviceId) || (allowByKey && isLocked(ev) && !!ev.deleteKeyHash);
+          if (!ok) return events;
+
+          return events.filter(x => x.id !== eventId);
+        });
 
         alert("イベントを削除しました。");
-        return events.filter(x => x.id !== eventId);
-      });
+      } catch (err) {
+        console.error(err);
+        const message = err?.message ? err.message : String(err);
+        alert(`削除に失敗しました：${message}`);
+        return;
+      }
 
+      // 画像（Storage）も削除（失敗しても続行）
       if (hadImage && storage) {
         try {
           const ref = imageRefForEvent(eventId);
@@ -459,9 +535,10 @@ function renderJoinList(container, events, deviceId) {
       : alreadyJoinedByThisDevice ? "この端末はすでに参加済みです（1イベントにつき1回まで）。"
       : "";
 
-    const canDelete = (ev.creatorDeviceId === deviceId);
-    const deleteBtn = canDelete
-      ? `<button class="btn small danger-outline" data-action="delete-event" data-event-id="${escapeHtml(ev.id)}" type="button">このイベントを削除</button>`
+    const isCreator = (ev.creatorDeviceId === deviceId);
+    const canDeleteByKey = (!isCreator) && locked && !!ev.deleteKeyHash;
+    const deleteBtn = (isCreator || canDeleteByKey)
+      ? `<button class="btn small danger-outline" data-action="delete-event" data-event-id="${escapeHtml(ev.id)}" type="button">${isCreator ? "このイベントを削除" : "削除キーで削除"}</button>`
       : "";
 
     const item = document.createElement("div");
@@ -620,19 +697,50 @@ function initJoinPage(deviceId) {
       if (!eventId) return;
       if (!confirm("このイベントを削除しますか？（参加者情報も消えます）")) return;
 
+      // 先に現在のイベント情報を取得（削除権限チェック・画像削除判定に使用）
       const beforeEvents = await getEventsOnce();
       const target = beforeEvents.find(x => x.id === eventId);
-      const hadImage = !!(target && target.imageUrl);
+      if (!target) { alert("イベントが見つかりませんでした。"); return; }
 
-      await updateEventsRemote((events) => {
-        const ev = events.find(x => x.id === eventId);
-        if (!ev) { alert("イベントが見つかりませんでした。"); return events; }
-        if (ev.creatorDeviceId !== deviceId) { alert("作成者（この端末）だけがイベントを削除できます。"); return events; }
+      const hadImage = !!target.imageUrl;
+
+      let allowByKey = false;
+      try {
+        const auth = await authorizeDeleteEvent(target, deviceId);
+        if (!auth.ok) {
+          if (auth.reason === "invalid") alert("削除キーが違います。");
+          else if (auth.reason === "empty") alert("削除キーを入力してください。");
+          else if (auth.reason === "not_allowed") alert("作成者（作成端末）だけが削除できます。締め切り後は、作成時に設定した削除キーがあれば別端末からも削除できます。");
+          // cancel は何もしない
+          return;
+        }
+        allowByKey = !!auth.byKey;
+      } catch (err) {
+        console.error(err);
+        alert("削除キーの検証に失敗しました。ブラウザが古い可能性があります。");
+        return;
+      }
+
+      try {
+        await updateEventsRemote((events) => {
+          const ev = events.find(x => x.id === eventId);
+          if (!ev) return events;
+
+          const ok = (ev.creatorDeviceId === deviceId) || (allowByKey && isLocked(ev) && !!ev.deleteKeyHash);
+          if (!ok) return events;
+
+          return events.filter(x => x.id !== eventId);
+        });
 
         alert("イベントを削除しました。");
-        return events.filter(x => x.id !== eventId);
-      });
+      } catch (err) {
+        console.error(err);
+        const message = err?.message ? err.message : String(err);
+        alert(`削除に失敗しました：${message}`);
+        return;
+      }
 
+      // 画像（Storage）も削除（失敗しても続行）
       if (hadImage && storage) {
         try {
           const ref = imageRefForEvent(eventId);
@@ -846,7 +954,7 @@ function initCreatePage(deviceId) {
         msg.textContent = "未入力の必須項目があります。すべて入力してください。";
         return;
       }
-      if (detailText.length > 100) { msg.textContent = "詳細は100文字以内にしてください。"; return; }
+      if (detailText.length > 300) { msg.textContent = "詳細は300文字以内にしてください。"; return; }
 
       const s = new Date(startISO).getTime();
       const en = new Date(endISO).getTime();
@@ -855,6 +963,20 @@ function initCreatePage(deviceId) {
       if (minPeople !== null && (!Number.isFinite(minPeople) || minPeople < 1)) { msg.textContent = "募集人数（最小）が不正です。"; return; }
       if (maxPeople !== null && (!Number.isFinite(maxPeople) || maxPeople < 1)) { msg.textContent = "募集人数（最大）が不正です。"; return; }
       if (minPeople !== null && maxPeople !== null && minPeople > maxPeople) { msg.textContent = "募集人数は「最小 ≤ 最大」にしてください。"; return; }
+
+      // 削除キー（任意）：締切後に別端末から削除するための合言葉
+      const deleteKeyRaw = sanitizeDeleteKey(fd.get("deleteKey"));
+      let deleteKeyHash = null;
+      if (deleteKeyRaw) {
+        if (deleteKeyRaw.length < 4) { msg.textContent = "削除キーは4〜32文字で入力してください。"; return; }
+        try {
+          deleteKeyHash = await sha256Hex(deleteKeyRaw);
+        } catch (err) {
+          console.error(err);
+          msg.textContent = "このブラウザでは削除キーが使えません（crypto.subtle 未対応）。削除キーを空欄にするか、別のブラウザで作成してください。";
+          return;
+        }
+      }
 
       // イベントIDを先に確定（画像パスに使う）
       eventId = uid();
@@ -911,6 +1033,7 @@ function initCreatePage(deviceId) {
         startISO,
         endISO,
         deadlineISO,
+        deleteKeyHash,
         minPeople,
         maxPeople,
         imageUrl,
@@ -978,7 +1101,3 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (page === "home2") initEventsPage(deviceId);
   if (page === "join") initJoinPage(deviceId);
 });
-
-
-
-
